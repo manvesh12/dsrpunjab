@@ -36,11 +36,17 @@ export default function SettingsPage() {
   ]);
 
   // Users State
-  const users = [
+  const [users, setUsers] = useState([
     { email: "admin@punjab.gov.in", role: "Super Admin", status: "Active" },
     { email: "officer.jalandhar@punjab.gov.in", role: "District Officer", status: "Active" },
     { email: "reviewer@punjab.gov.in", role: "Reviewer", status: "Inactive" },
-  ];
+  ]);
+
+  const handleAddUserSuccess = (newUser: PortalUser) => {
+    setUsers([{ email: newUser.email, role: newUser.role, status: "Pending" }, ...users]);
+    setShowAddUser(false);
+    alert(`Invitation sent successfully to ${newUser.email}`);
+  };
 
   const handleAddAnnouncement = () => {
     setAnnouncements([{ date: "", title: "", category: "Information", active: true }, ...announcements]);
@@ -52,7 +58,7 @@ export default function SettingsPage() {
 
   return (
     <>
-      {showAddUser && <AddUserModal onClose={() => setShowAddUser(false)} onSuccess={(user: PortalUser) => setShowAddUser(false)} />}
+      {showAddUser && <AddUserModal onClose={() => setShowAddUser(false)} onSuccess={handleAddUserSuccess} />}
       {showBulkInvite && <BulkInviteModal onClose={() => setShowBulkInvite(false)} />}
       <PageHeader
         title="Settings"
