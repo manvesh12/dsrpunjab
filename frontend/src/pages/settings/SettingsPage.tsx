@@ -16,11 +16,14 @@ import {
 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
 import { usePublicSettingsStore } from "../../stores/publicSettingsStore";
+import { AddUserModal, BulkInviteModal, type PortalUser } from "../../features/users/components/UserManagementPanel";
 
 type Tab = "profile" | "general" | "users";
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<Tab>("profile");
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [showBulkInvite, setShowBulkInvite] = useState(false);
 
   // General Config State
   const { noticeText, announcements, setNoticeText, setAnnouncements } = usePublicSettingsStore();
@@ -49,6 +52,8 @@ export default function SettingsPage() {
 
   return (
     <>
+      {showAddUser && <AddUserModal onClose={() => setShowAddUser(false)} onSuccess={(user: PortalUser) => setShowAddUser(false)} />}
+      {showBulkInvite && <BulkInviteModal onClose={() => setShowBulkInvite(false)} />}
       <PageHeader
         title="Settings"
         description="System configuration, global notifications, and user scope management"
@@ -272,10 +277,10 @@ export default function SettingsPage() {
         {activeTab === "users" && (
           <div className="max-w-6xl">
             <div className="flex justify-end gap-3 mb-4">
-              <button className="module-btn">
+              <button className="module-btn" onClick={() => setShowBulkInvite(true)}>
                 <MailPlus size={16} /> Bulk Invite
               </button>
-              <button className="module-btn-primary">
+              <button className="module-btn-primary" onClick={() => setShowAddUser(true)}>
                 <UserPlus size={16} /> Add User
               </button>
             </div>

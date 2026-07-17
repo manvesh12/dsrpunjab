@@ -9,7 +9,7 @@ import type { UserRole } from '../../../types/auth.types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface PortalUser {
+export interface PortalUser {
   id: string;
   name: string;
   email: string;
@@ -110,12 +110,12 @@ function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' | 'lg'
 
 // ─── Add User Modal ───────────────────────────────────────────────────────────
 
-interface AddUserModalProps {
+export interface AddUserModalProps {
   onClose: () => void;
   onSuccess: (user: PortalUser) => void;
 }
 
-function AddUserModal({ onClose, onSuccess }: AddUserModalProps) {
+export function AddUserModal({ onClose, onSuccess }: AddUserModalProps) {
   const [form, setForm] = useState({
     name: '', email: '', mobile: '', department: '', designation: '',
     district: '', role: '' as UserRole | '', state: 'Punjab',
@@ -291,12 +291,12 @@ function AddUserModal({ onClose, onSuccess }: AddUserModalProps) {
 
 // ─── Bulk Invite Modal ────────────────────────────────────────────────────────
 
-interface BulkInviteResult {
+export interface BulkInviteResult {
   success: number;
   failed: { row: number; email: string; reason: string }[];
 }
 
-function BulkInviteModal({ onClose }: { onClose: () => void }) {
+export function BulkInviteModal({ onClose }: { onClose: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);

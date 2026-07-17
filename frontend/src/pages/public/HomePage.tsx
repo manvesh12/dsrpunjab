@@ -136,45 +136,41 @@ export default function HomePage() {
                     <div className="absolute inset-0 flex flex-col hover:[animation-play-state:paused] animate-[marquee-vertical_20s_linear_infinite] px-6">
                       
                       {/* Notice Items */}
-                      <div className="py-4 border-b border-slate-200 last:border-0">
-                        <span className="text-xs font-bold text-amber-600 bg-amber-100 px-2 py-0.5 rounded uppercase mb-1 inline-block">New</span>
-                        <p className="font-semibold text-slate-800 text-sm leading-tight hover:text-blue-600 cursor-pointer transition-colors">
-                          Guidelines for submission of DSR for the financial year 2026-27 have been updated.
-                        </p>
-                        <p className="text-xs text-slate-500 mt-1">17 July 2026</p>
-                      </div>
-
-                      <div className="py-4 border-b border-slate-200 last:border-0">
-                        <span className="text-xs font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded uppercase mb-1 inline-block">Update</span>
-                        <p className="font-semibold text-slate-800 text-sm leading-tight hover:text-blue-600 cursor-pointer transition-colors">
-                          District Survey Reports for Patiala and Ludhiana are now available for public review.
-                        </p>
-                        <p className="text-xs text-slate-500 mt-1">14 July 2026</p>
-                      </div>
-
-                      <div className="py-4 border-b border-slate-200 last:border-0">
-                        <p className="font-semibold text-slate-800 text-sm leading-tight hover:text-blue-600 cursor-pointer transition-colors">
-                          Training session for Data Entry Operators scheduled for next week.
-                        </p>
-                        <p className="text-xs text-slate-500 mt-1">10 July 2026</p>
-                      </div>
-
-                      <div className="py-4 border-b border-slate-200 last:border-0">
-                        <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded uppercase mb-1 inline-block">Alert</span>
-                        <p className="font-semibold text-slate-800 text-sm leading-tight hover:text-blue-600 cursor-pointer transition-colors">
-                          Scheduled maintenance on the portal this Sunday from 2 AM to 4 AM.
-                        </p>
-                        <p className="text-xs text-slate-500 mt-1">05 July 2026</p>
-                      </div>
+                      {announcements.filter(a => a.active).map((ann, idx) => (
+                        <div key={idx} className="py-4 border-b border-slate-200 dark:border-slate-800 last:border-0">
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded uppercase mb-1 inline-block ${
+                            ann.category === 'Maintenance' ? 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30' :
+                            ann.category === 'Information' ? 'text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30' :
+                            'text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30'
+                          }`}>
+                            {ann.category}
+                          </span>
+                          <p className="font-semibold text-slate-800 dark:text-slate-200 text-sm leading-tight hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer transition-colors">
+                            {ann.title}
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{ann.date}</p>
+                        </div>
+                      ))}
+                      {announcements.filter(a => a.active).length === 0 && (
+                        <div className="py-4 text-center text-sm text-slate-500">No notices at the moment.</div>
+                      )}
                       
                       {/* Duplicated for seamless loop */}
-                      <div className="py-4 border-b border-slate-200 dark:border-slate-800 last:border-0">
-                        <span className="text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 rounded uppercase mb-1 inline-block">New</span>
-                        <p className="font-semibold text-slate-800 dark:text-slate-200 text-sm leading-tight hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer transition-colors">
-                          Guidelines for submission of DSR for the financial year 2026-27 have been updated.
-                        </p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">17 July 2026</p>
-                      </div>
+                      {announcements.filter(a => a.active).map((ann, idx) => (
+                        <div key={`dup-${idx}`} className="py-4 border-b border-slate-200 dark:border-slate-800 last:border-0">
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded uppercase mb-1 inline-block ${
+                            ann.category === 'Maintenance' ? 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30' :
+                            ann.category === 'Information' ? 'text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30' :
+                            'text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30'
+                          }`}>
+                            {ann.category}
+                          </span>
+                          <p className="font-semibold text-slate-800 dark:text-slate-200 text-sm leading-tight hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer transition-colors">
+                            {ann.title}
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{ann.date}</p>
+                        </div>
+                      ))}
 
                     </div>
                   </div>
