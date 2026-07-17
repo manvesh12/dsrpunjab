@@ -1,0 +1,928 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector, postgis]
+}
+
+enum ProjectStatus {
+  ACTIVE
+  IN_PROGRESS
+  COMPLETED
+  ARCHIVED
+}
+
+enum ReportStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum ModelDsrStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum SectionContentType {
+  TEXT
+  TABLE
+  IMAGE
+  DYNAMIC_GRID
+}
+
+enum GeneratedDsrStatus {
+  DRAFT
+  FINAL
+}
+
+enum SectionStatus {
+  DRAFT
+  PENDING_REVIEW
+  RETURNED
+  REJECTED
+  APPROVED
+  PUBLISHED
+  LOCKED
+}
+
+// =========================================================
+// IDENTITY & ORGANIZATION (PHASE 32)
+// =========================================================
+model Department {
+  id      BigInt   @id @default(autoincrement())
+  stateId BigInt
+  name    String
+  state   State    @relation(fields: [stateId], references: [id], onDelete: Restrict)
+  offices Office[]
+}
+
+model Office {
+  id           BigInt     @id @default(autoincrement())
+  departmentId BigInt
+  districtId   BigInt?
+  officeType   String // HEADQUARTERS, DISTRICT_OFFICE, SUB_DIVISION
+  name         String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  district     District?  @relation(fields: [districtId], references: [id], onDelete: Restrict)
+  employees    Employee[]
+}
+
+model Designation {
+  id        BigInt     @id @default(autoincrement())
+  title     String
+  level     Int
+  employees Employee[]
+}
+
+model Employee {
+  id            BigInt @id @default(autoincrement())
+  userId        BigInt @unique
+  officeId      BigInt
+  designationId BigInt
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  office      Office      @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  designation Designation @relation(fields: [designationId], references: [id], onDelete: Restrict)
+
+  tasksAssigned Task[] @relation("AssignedTo")
+  tasksCreated  Task[] @relation("AssignedBy")
+}
+
+model User {
+  id           BigInt    @id @default(autoincrement())
+  fullName     String
+  username     String    @unique
+  email        String    @unique
+  mobileNumber String?   @unique
+  password     String
+  role         String
+  districtId   BigInt?
+  district     District? @relation(fields: [districtId], references: [id], onDelete: SetNull)
+  stateId      BigInt?
+  state        State?    @relation(fields: [stateId], references: [id], onDelete: SetNull)
+
+  // Preserved for backward compatibility, but conceptually moved to Employee
+  officeName  String?
+  designation String?
+  employeeId  String? @unique
+  blockName   String?
+  sectionName String?
+
+  accessScope String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  employee              Employee?
+  refreshTokens         RefreshToken[]
+  passwordResetRequests PasswordResetRequest[]
+  projectMembers        ProjectMember[]
+  notifications         Notification[]
+  userSessions          UserSession[]
+  loginHistories        LoginHistory[]
+  permissionHistories   PermissionHistory[]
+
+  @@index([role, active])
+  @@index([districtId, role])
+  @@index([createdAt])
+}
+
+model RefreshToken {
+  id        BigInt   @id @default(autoincrement())
+  token     String   @unique
+  userId    BigInt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  revoked   Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId, revoked, expiresAt])
+  @@index([expiresAt])
+}
+
+// =========================================================
+// GEOGRAPHY (Existing)
+// =========================================================
+model State {
+  id          BigInt       @id @default(autoincrement())
+  name        String       @unique
+  code        String       @unique
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  districts   District[]
+  users       User[]
+  departments Department[]
+}
+
+model District {
+  id        BigInt    @id @default(autoincrement())
+  stateId   BigInt
+  name      String    @unique
+  code      String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  state     State     @relation(fields: [stateId], references: [id], onDelete: Cascade)
+  users     User[]
+  projects  Project[]
+  offices   Office[]
+}
+
+// =========================================================
+// MINING & GIS (PHASE 33 & 35)
+// =========================================================
+model RiverBasin {
+  id     BigInt  @id @default(autoincrement())
+  name   String  @unique
+  rivers River[]
+}
+
+model River {
+  id             BigInt                                          @id @default(autoincrement())
+  basinId        BigInt
+  districtId     BigInt
+  name           String
+  geometry       Unsupported("geometry(MultiLineString, 4326)")?
+  basin          RiverBasin                                      @relation(fields: [basinId], references: [id], onDelete: Restrict)
+  miningClusters MiningCluster[]
+}
+
+model MiningCluster {
+  id      BigInt                                  @id @default(autoincrement())
+  riverId BigInt
+  name    String
+  polygon Unsupported("geometry(Polygon, 4326)")?
+  river   River                                   @relation(fields: [riverId], references: [id], onDelete: Restrict)
+  leases  MiningLease[]
+}
+
+model MiningLease {
+  id           BigInt                                  @id @default(autoincrement())
+  clusterId    BigInt
+  projectId    BigInt
+  districtId   BigInt
+  leaseName    String
+  areaHectares Float
+  polygon      Unsupported("geometry(Polygon, 4326)")?
+  status       String                                  @default("ACTIVE")
+  createdAt    DateTime                                @default(now())
+
+  cluster        MiningCluster        @relation(fields: [clusterId], references: [id], onDelete: Restrict)
+  project        Project              @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  replenishments ReplenishmentStudy[]
+
+  @@index([polygon], type: Gist)
+}
+
+// =========================================================
+// PROJECTS & WORKFLOW (PHASE 40 & PHASE 36)
+// =========================================================
+model Project {
+  id                BigInt        @id @default(autoincrement())
+  projectCode       String?       @unique
+  projectName       String
+  title             String?
+  districtId        BigInt?
+  district          District?     @relation(fields: [districtId], references: [id], onDelete: SetNull)
+  year              String?
+  mineral           String?
+  rivers            String?
+  description       String?
+  progress          Int           @default(0)
+  status            ProjectStatus @default(IN_PROGRESS)
+  signatures        Int           @default(0)
+  phaseNo           Int           @default(1)
+  parentPhaseId     BigInt?
+  phaseLocked       Boolean       @default(false)
+  phaseOrigin       String?       @db.Text
+  createdBy         BigInt?
+  projectState      String?       @db.Text
+  lastReviewedState String?       @db.Text
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  files                     DsrFile[]
+  parentPhase               Project?             @relation("ProjectPhaseChain", fields: [parentPhaseId], references: [id])
+  childPhases               Project[]            @relation("ProjectPhaseChain")
+  generatedDsrs             GeneratedDsr[]
+  modelImportHistory        ModelImportHistory[]
+  replenishmentStudies      ReplenishmentStudy[]
+  childReplenishmentStudies ReplenishmentStudy[] @relation("ReplenishmentParentDsr")
+  dsrChunks                 DsrReportChunk[]
+  projectSections           ProjectSection[]
+  projectDraft              ProjectDraft?
+  projectVersions           ProjectVersion[]
+  auditLogs                 ProjectAuditLog[]
+  projectMembers            ProjectMember[]
+  reports                   Report[]
+
+  // Enterprise Extensions
+  leases            MiningLease[]
+  officialFiles     OfficialFile[]
+  digitalSignatures DigitalSignature[]
+
+  @@index([parentPhaseId])
+  @@index([districtId, phaseNo])
+  @@index([status, createdAt])
+  @@index([createdBy, createdAt])
+  @@index([districtId, status, createdAt])
+}
+
+model ProjectMember {
+  id         BigInt   @id @default(autoincrement())
+  projectId  BigInt
+  userId     BigInt
+  role       String
+  assignedAt DateTime @default(now())
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+}
+
+// =========================================================
+// E-OFFICE TASK MANAGEMENT (PHASE 36 & 38)
+// =========================================================
+model OfficialFile {
+  id         BigInt   @id @default(autoincrement())
+  projectId  BigInt
+  fileNumber String   @unique
+  status     String
+  createdAt  DateTime @default(now())
+
+  project   Project        @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  movements FileMovement[]
+}
+
+model FileMovement {
+  id         BigInt   @id @default(autoincrement())
+  fileId     BigInt
+  fromUserId BigInt
+  toUserId   BigInt
+  noteSheet  String   @db.Text
+  action     String
+  createdAt  DateTime @default(now())
+
+  file OfficialFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+}
+
+model Task {
+  id          BigInt   @id @default(autoincrement())
+  title       String
+  description String
+  assignedBy  BigInt
+  assignedTo  BigInt
+  status      String   @default("OPEN")
+  createdAt   DateTime @default(now())
+
+  assigner Employee    @relation("AssignedBy", fields: [assignedBy], references: [id], onDelete: Restrict)
+  assignee Employee    @relation("AssignedTo", fields: [assignedTo], references: [id], onDelete: Restrict)
+  replies  TaskReply[]
+}
+
+model TaskReply {
+  id        BigInt   @id @default(autoincrement())
+  taskId    BigInt
+  userId    BigInt
+  message   String
+  createdAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+// =========================================================
+// COMMITTEE MANAGEMENT (PHASE 37)
+// =========================================================
+model Committee {
+  id         BigInt            @id @default(autoincrement())
+  name       String // e.g., "DEAC", "SEIAA"
+  districtId BigInt?
+  members    CommitteeMember[]
+}
+
+model CommitteeMember {
+  id          BigInt @id @default(autoincrement())
+  committeeId BigInt
+  userId      BigInt
+  role        String // CHAIRMAN, MEMBER_SECRETARY, EXPERT
+
+  committee Committee @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+}
+
+model DigitalSignature {
+  id            BigInt   @id @default(autoincrement())
+  userId        BigInt
+  projectId     BigInt
+  documentId    String
+  signatureHash String
+  signedAt      DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// =========================================================
+// REPLENISHMENT STUDIES (PHASE 40)
+// =========================================================
+model ReplenishmentStudy {
+  id             String       @id @default(uuid())
+  projectId      BigInt
+  title          String
+  status         ReportStatus @default(DRAFT)
+  approvalState  String       @default("DRAFT")
+  currentVersion Int          @default(1)
+  parentDsrId    BigInt?
+  leaseId        BigInt? // New relation to MiningLease
+  river          String?
+  miningBlock    String?
+
+  surveyData  Json @default("{}") // Kept for backward compatibility
+  reportState Json @default("{}")
+
+  createdBy BigInt?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project   Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parentDsr Project?     @relation("ReplenishmentParentDsr", fields: [parentDsrId], references: [id], onDelete: SetNull)
+  lease     MiningLease? @relation(fields: [leaseId], references: [id], onDelete: SetNull)
+
+  files     ReplenishmentFile[]
+  comments  ReplenishmentComment[]
+  auditLogs ReplenishmentAuditLog[]
+  aiHistory ReplenishmentAiHistory[]
+
+  @@index([projectId, createdAt])
+  @@index([status, createdAt])
+  @@index([createdBy, createdAt])
+}
+
+model ReplenishmentFile {
+  id              String             @id @default(uuid())
+  replenishmentId String
+  sectionId       String
+  fileName        String
+  objectKey       String
+  contentType     String
+  sizeBytes       Int
+  uploadedBy      BigInt?
+  createdAt       DateTime           @default(now())
+  replenishment   ReplenishmentStudy @relation(fields: [replenishmentId], references: [id], onDelete: Cascade)
+
+  @@index([replenishmentId, sectionId])
+  @@index([objectKey])
+}
+
+model ReplenishmentComment {
+  id              String             @id @default(uuid())
+  replenishmentId String
+  sectionId       String
+  content         String
+  createdBy       BigInt
+  resolved        Boolean            @default(false)
+  createdAt       DateTime           @default(now())
+  replenishment   ReplenishmentStudy @relation(fields: [replenishmentId], references: [id], onDelete: Cascade)
+
+  @@index([replenishmentId, sectionId])
+}
+
+model ReplenishmentAuditLog {
+  id              String             @id @default(uuid())
+  replenishmentId String
+  userId          BigInt
+  action          String
+  details         Json?
+  createdAt       DateTime           @default(now())
+  replenishment   ReplenishmentStudy @relation(fields: [replenishmentId], references: [id], onDelete: Cascade)
+
+  @@index([replenishmentId, createdAt])
+}
+
+model ReplenishmentAiHistory {
+  id                String             @id @default(uuid())
+  replenishmentId   String
+  sectionId         String
+  promptContext     Json?
+  generatedText     String
+  officerEditedText String?
+  accepted          Boolean            @default(false)
+  createdAt         DateTime           @default(now())
+  replenishment     ReplenishmentStudy @relation(fields: [replenishmentId], references: [id], onDelete: Cascade)
+
+  @@index([replenishmentId, sectionId])
+}
+
+// =========================================================
+// SURVEY MANAGEMENT (PHASE 34)
+// =========================================================
+model Survey {
+  id            BigInt         @id @default(autoincrement())
+  projectId     BigInt
+  surveyType    String // DGPS, DRONE, MANUAL
+  conductedBy   BigInt
+  conductedAt   DateTime
+  crossSections CrossSection[]
+}
+
+model CrossSection {
+  id         BigInt @id @default(autoincrement())
+  surveyId   BigInt
+  latitude   Float
+  longitude  Float
+  riverWidth Float
+  bedLevel   Float
+  survey     Survey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+}
+
+// =========================================================
+// ADVANCED AI & AUDIT SYSTEM (PHASE 39 & 41)
+// =========================================================
+model DsrReportChunk {
+  id        String                       @id @default(uuid())
+  projectId BigInt
+  section   String
+  content   String
+  embedding Unsupported("vector(1536)")?
+  createdAt DateTime                     @default(now())
+  project   Project                      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, section])
+  @@index([createdAt])
+}
+
+model GlobalAuditLog {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt?
+  module    String // AUTH, FILE, GIS, TASK, REPLENISHMENT
+  action    String
+  ip        String?
+  oldValue  Json?
+  newValue  Json?
+  createdAt DateTime @default(now())
+}
+
+// =========================================================
+// LEGACY ENTITIES (Kept for backward compatibility)
+// =========================================================
+model Report {
+  id           BigInt       @id @default(autoincrement())
+  reportNumber String?      @unique
+  projectId    BigInt?
+  title        String
+  description  String?
+  reportType   String?
+  status       ReportStatus @default(DRAFT)
+  submittedBy  BigInt?
+  reviewedBy   BigInt?
+  approvedBy   BigInt?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, status])
+  @@index([status, createdAt])
+  @@index([submittedBy, createdAt])
+}
+
+model WorkflowHistory {
+  id          BigInt   @id @default(autoincrement())
+  reportId    BigInt
+  action      String
+  remarks     String?
+  performedBy BigInt?
+  performedAt DateTime @default(now())
+
+  @@index([reportId, performedAt])
+  @@index([performedBy, performedAt])
+  @@index([action, performedAt])
+}
+
+model AuditLog {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt?
+  action    String
+  method    String
+  path      String
+  ip        String?
+  userAgent String?
+  status    Int?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@index([method, path, createdAt])
+  @@index([status, createdAt])
+}
+
+model DsrFile {
+  id          BigInt   @id @default(autoincrement())
+  projectId   BigInt
+  annexureId  String
+  fileName    String
+  objectKey   String
+  contentType String   @default("application/pdf")
+  sizeBytes   Int
+  createdAt   DateTime @default(now())
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, annexureId])
+  @@index([projectId, createdAt])
+  @@index([annexureId])
+  @@index([objectKey])
+}
+
+model ModelDsr {
+  id          String         @id @default(uuid())
+  modelId     String?        @unique
+  title       String         @unique
+  description String?
+  category    String?
+  district    String?
+  mineralType String?
+  remarks     String?
+  visibility  String         @default("DEPARTMENT_ONLY")
+  status      ModelDsrStatus @default(DRAFT)
+  createdBy   BigInt?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  version     Int            @default(1)
+
+  sections      ModelDsrSection[]
+  files         ModelDsrFile[]
+  versions      ModelDsrVersion[]
+  tags          ModelDsrTag[]
+  permissions   ModelDsrPermission[]
+  importHistory ModelImportHistory[]
+  previewCache  ModelPreviewCache?
+  generated     GeneratedDsr[]
+
+  @@index([status, createdAt])
+  @@index([district, status], map: "idx_modeldsr_district_status")
+  @@index([createdBy, createdAt])
+  @@index([category, status])
+}
+
+model ModelDsrSection {
+  id            String             @id @default(uuid())
+  modelId       String
+  sectionName   String
+  sequence      Int
+  contentType   SectionContentType @default(TEXT)
+  configuration Json               @default("{}")
+  isIncluded    Boolean            @default(true)
+  chapterType   String?
+  model         ModelDsr           @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  @@unique([modelId, sequence])
+  @@index([modelId, isIncluded])
+  @@index([contentType])
+}
+
+model ModelDsrFile {
+  id          String   @id @default(uuid())
+  modelId     String
+  fileName    String
+  objectKey   String
+  contentType String   @default("application/pdf")
+  fileType    String?
+  sizeBytes   Int
+  createdAt   DateTime @default(now())
+  model       ModelDsr @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  @@index([modelId, createdAt])
+  @@index([fileType])
+}
+
+model ModelDsrVersion {
+  id            String   @id @default(uuid())
+  modelId       String
+  versionNumber Int
+  snapshotData  Json
+  createdAt     DateTime @default(now())
+  createdBy     BigInt?
+  remarks       String?
+  model         ModelDsr @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  @@index([modelId, createdAt])
+}
+
+model ModelDsrTag {
+  id      String   @id @default(uuid())
+  modelId String
+  tag     String
+  model   ModelDsr @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  @@unique([modelId, tag])
+}
+
+model ModelDsrPermission {
+  id          String   @id @default(uuid())
+  modelId     String
+  userId      BigInt
+  accessLevel String
+  model       ModelDsr @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  @@unique([modelId, userId])
+  @@index([userId, accessLevel])
+}
+
+model ModelImportHistory {
+  id         String   @id @default(uuid())
+  modelId    String
+  projectId  BigInt
+  importedBy BigInt
+  importedAt DateTime @default(now())
+  importType String
+  dataMapped Json
+  model      ModelDsr @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([modelId, importedAt])
+  @@index([projectId, importedAt])
+  @@index([importedBy, importedAt])
+}
+
+model ModelPreviewCache {
+  id          String   @id @default(uuid())
+  modelId     String   @unique
+  pageCount   Int      @default(0)
+  imageCount  Int      @default(0)
+  tableCount  Int      @default(0)
+  mapCount    Int      @default(0)
+  previewData Json
+  updatedAt   DateTime @updatedAt
+  model       ModelDsr @relation(fields: [modelId], references: [id], onDelete: Cascade)
+}
+
+model GeneratedDsr {
+  id          String                @id @default(uuid())
+  modelId     String
+  projectId   BigInt?
+  status      GeneratedDsrStatus    @default(DRAFT)
+  dataPayload Json                  @default("{}")
+  pdfUrl      String?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  model       ModelDsr              @relation(fields: [modelId], references: [id], onDelete: Restrict)
+  project     Project?              @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  versions    GeneratedDsrVersion[]
+
+  @@index([modelId, status, createdAt])
+  @@index([projectId, status, createdAt])
+}
+
+model GeneratedDsrVersion {
+  id             String       @id @default(uuid())
+  generatedDsrId String
+  dataPayload    Json
+  pdfUrl         String?
+  createdAt      DateTime     @default(now())
+  generatedDsr   GeneratedDsr @relation(fields: [generatedDsrId], references: [id], onDelete: Cascade)
+
+  @@index([generatedDsrId, createdAt])
+}
+
+model PasswordResetRequest {
+  id           BigInt   @id @default(autoincrement())
+  userId       BigInt
+  identifier   String
+  otpHash      String
+  expiresAt    DateTime
+  attemptCount Int      @default(0)
+  used         Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([identifier, used, createdAt])
+  @@index([userId, used, createdAt])
+  @@index([expiresAt])
+}
+
+model OtpVerification {
+  id           BigInt   @id @default(autoincrement())
+  identifier   String
+  otpHash      String
+  purpose      String
+  expiresAt    DateTime
+  attemptCount Int      @default(0)
+  used         Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([identifier, purpose, used, createdAt])
+  @@index([expiresAt])
+}
+
+model Invitation {
+  id                  String    @id @default(uuid())
+  email               String    @unique
+  fullName            String?
+  department          String?
+  designation         String?
+  state               String?
+  district            String?
+  mobileNumber        String?
+  role                String
+  token               String    @unique
+  status              String    @default("INVITED")
+  expiresAt           DateTime
+  createdBy           BigInt
+  pendingProfile      Json?
+  pendingPasswordHash String?
+  otpResendCount      Int       @default(0)
+  otpLastSentAt       DateTime?
+  registeredAt        DateTime?
+  createdAt           DateTime  @default(now())
+
+  @@index([status, expiresAt])
+  @@index([createdBy, createdAt])
+}
+
+model SystemSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@index([updatedAt])
+}
+
+model ProjectSection {
+  id           BigInt        @id @default(autoincrement())
+  projectId    BigInt
+  sectionName  String
+  content      Json
+  status       SectionStatus @default(DRAFT)
+  version      Int           @default(1)
+  lastEditedBy BigInt?
+  updatedAt    DateTime      @updatedAt
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, sectionName])
+}
+
+model ProjectDraft {
+  id           BigInt   @id @default(autoincrement())
+  projectId    BigInt   @unique
+  draftContent Json
+  updatedAt    DateTime @updatedAt
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model ProjectVersion {
+  id            BigInt   @id @default(autoincrement())
+  projectId     BigInt
+  versionNumber Int
+  snapshot      Json
+  createdAt     DateTime @default(now())
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, versionNumber])
+}
+
+model ProjectAuditLog {
+  id        BigInt   @id @default(autoincrement())
+  projectId BigInt
+  userId    BigInt
+  action    String
+  oldValue  Json?
+  newValue  Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt
+  type      String
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+  @@index([createdAt])
+}
+
+// =========================================================
+// NORMALIZED ENTERPRISE RBAC (PHASE 45)
+// =========================================================
+model Module {
+  id          BigInt       @id @default(autoincrement())
+  name        String       @unique
+  description String?
+  permissions Permission[]
+}
+
+model Permission {
+  id          BigInt           @id @default(autoincrement())
+  moduleId    BigInt
+  action      String           @unique // e.g., USER_VIEW, PROJECT_CREATE
+  description String?
+  module      Module           @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  roles       RolePermission[]
+}
+
+model Role {
+  id                BigInt              @id @default(autoincrement())
+  name              String              @unique // e.g., SUPER_ADMIN
+  description       String?
+  permissions       RolePermission[]
+  permissionHistory PermissionHistory[]
+}
+
+model RolePermission {
+  roleId       BigInt
+  permissionId BigInt
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model UserSession {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt
+  token     String   @unique
+  ipAddress String?
+  device    String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model LoginHistory {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt
+  ipAddress String?
+  device    String?
+  browser   String?
+  status    String // SUCCESS, FAILED
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PermissionHistory {
+  id            BigInt   @id @default(autoincrement())
+  roleId        BigInt
+  changedBy     BigInt
+  action        String // ADDED, REMOVED
+  permission    String
+  reason        String?
+  createdAt     DateTime @default(now())
+  role          Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  changedByUser User     @relation(fields: [changedBy], references: [id], onDelete: Restrict)
+}
+
+model FeatureFlag {
+  id          BigInt   @id @default(autoincrement())
+  name        String   @unique
+  isEnabled   Boolean  @default(false)
+  description String?
+  updatedAt   DateTime @updatedAt
+}
