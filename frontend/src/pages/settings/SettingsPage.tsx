@@ -15,18 +15,59 @@ import {
   Lock,
 } from "lucide-react";
 import PageHeader from "../../components/layout/PageHeader";
-import { usePublicSettingsStore } from "../../stores/publicSettingsStore";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { settingsApi } from "../../api/settings.api";
+import { toast } from "sonner";
+import { useAuth } from "../../security/auth.context";
 import { AddUserModal, BulkInviteModal, type PortalUser } from "../../features/users/components/UserManagementPanel";
 
 type Tab = "profile" | "general" | "users";
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<Tab>("profile");
-  const [showAddUser, setShowAddUser] = useState(false);
-  const [showBulkInvite, setShowBulkInvite] = useState(false);
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
 
-  // General Config State
-  const { noticeText, announcements, setNoticeText, setAnnouncements } = usePublicSettingsStore();
+  const { data: noticeSetting } = useQuery({
+    queryKey: ["settings", "notice_text"],
+    queryFn: () => settingsApi.get("notice_text"),
+  });
+  
+  const { data: announcementsSetting } = useQuery({
+    queryKey: ["settings", "announcements"],
+    queryFn: () => settingsApi.get("announcements"),
+  });
+
+  const [localNoticeText, setLocalNoticeText] = useState("");
+  const [localAnnouncements, setLocalAnnouncements] = useState<any[]>([]);
+
+  // Update local state when data loads
+  import { useEffect } from "react";
+  useEffect(() => {
+    if (noticeSetting?.value) setLocalNoticeText(noticeSetting.value);
+  }, [noticeSetting]);
+
+  useEffect(() => {
+    if (announcementsSetting?.value) {
+      try {
+        setLocalAnnouncements(JSON.parse(announcementsSetting.value));
+      } catch (e) {
+        setLocalAnnouncements([]);
+      }
+    }
+  }, [announcementsSetting]);
+
+  const updateSetting = useMutation({
+    mutationFn: ({ key, value }: { key: string; value: string }) => settingsApi.update(key, value),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["settings", variables.key] });
+      toast.success("Settings updated successfully");
+    },
+    onError: () => toast.error("Failed to update settings"),
+  });
+
+  const handleSaveNotice = () => updateSetting.mutate({ key: "notice_text", value: localNoticeText });
+  const handleSaveAnnouncements = () => updateSetting.mutate({ key: "announcements", value: JSON.stringify(localAnnouncements) });
   
   const [contactInfo, setContactInfo] = useState([
     { icon: "🏢", title: "Nodal Office", content: "Punjab DSR Cell, Chandigarh" },
@@ -49,11 +90,11 @@ export default function SettingsPage() {
   };
 
   const handleAddAnnouncement = () => {
-    setAnnouncements([{ date: "", title: "", category: "Information", active: true }, ...announcements]);
+    setLocalAnnouncements([{ date: "", title: "", category: "Information", active: true }, ...localAnnouncements]);
   };
 
   const handleRemoveAnnouncement = (index: number) => {
-    setAnnouncements(announcements.filter((_, i) => i !== index));
+    setLocalAnnouncements(localAnnouncements.filter((_, i) => i !== index));
   };
 
   return (
@@ -122,20 +163,20 @@ export default function SettingsPage() {
                   <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
                     Name
                   </label>
-                  <div className="text-lg font-bold text-slate-800">Admin User</div>
+                  <div className="text-lg font-bold text-slate-800">{user?.fullName || user?.username}</div>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
                     Email
                   </label>
-                  <div className="text-slate-600">admin@punjab.gov.in</div>
+                  <div className="text-slate-600">{user?.email}</div>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
                     Role
                   </label>
                   <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700">
-                    System Administrator
+                    {user?.uiRole}
                   </span>
                 </div>
                 <div className="pt-4 border-t border-slate-100">
@@ -161,8 +202,8 @@ export default function SettingsPage() {
                 <label className="block text-sm font-semibold text-slate-700 mb-2">Announcement Text</label>
                 <textarea
                   rows={3}
-                  value={noticeText}
-                  onChange={(e) => setNoticeText(e.target.value)}
+                  value={localNoticeText}
+                  onChange={(e) => setLocalNoticeText(e.target.value)}
                   placeholder="Enter notice text to be displayed across the portal..."
                   className="w-full rounded-xl border border-slate-200 p-4 text-sm outline-none focus:border-blue-500 bg-slate-50"
                 />
@@ -170,7 +211,7 @@ export default function SettingsPage() {
                   This text will scroll horizontally at the top of all portal views.
                 </p>
                 <div className="mt-4">
-                  <button className="module-btn-primary bg-amber-500 hover:bg-amber-600 border-amber-600 text-white">
+                  <button onClick={handleSaveNotice} className="module-btn-primary bg-amber-500 hover:bg-amber-600 border-amber-600 text-white">
                     <Save size={16} /> Save Notice Bar
                   </button>
                 </div>
@@ -191,7 +232,7 @@ export default function SettingsPage() {
                 </div>
                 <div className="p-6">
                   <div className="space-y-3 mb-6">
-                    {announcements.map((ann, idx) => (
+                    {localAnnouncements.map((ann, idx) => (
                       <div key={idx} className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50">
                         <div className="flex-1 space-y-2">
                           <div className="flex gap-2">
@@ -200,9 +241,9 @@ export default function SettingsPage() {
                               placeholder="Date"
                               value={ann.date}
                               onChange={(e) => {
-                                const newAnn = [...announcements];
+                                const newAnn = [...localAnnouncements];
                                 newAnn[idx].date = e.target.value;
-                                setAnnouncements(newAnn);
+                                setLocalAnnouncements(newAnn);
                               }}
                               className="w-32 px-3 py-1.5 text-xs rounded border border-slate-200 outline-none focus:border-blue-500"
                             />
@@ -211,9 +252,9 @@ export default function SettingsPage() {
                               placeholder="Notice Title"
                               value={ann.title}
                               onChange={(e) => {
-                                const newAnn = [...announcements];
+                                const newAnn = [...localAnnouncements];
                                 newAnn[idx].title = e.target.value;
-                                setAnnouncements(newAnn);
+                                setLocalAnnouncements(newAnn);
                               }}
                               className="flex-1 px-3 py-1.5 text-xs rounded border border-slate-200 outline-none focus:border-blue-500"
                             />
@@ -224,11 +265,11 @@ export default function SettingsPage() {
                         </button>
                       </div>
                     ))}
-                    {announcements.length === 0 && (
+                    {localAnnouncements.length === 0 && (
                       <div className="text-center text-sm text-slate-500 py-4">No notices yet.</div>
                     )}
                   </div>
-                  <button className="module-btn-primary bg-emerald-600 hover:bg-emerald-700 border-emerald-700">
+                  <button onClick={handleSaveAnnouncements} className="module-btn-primary bg-emerald-600 hover:bg-emerald-700 border-emerald-700">
                     <Save size={16} /> Save Announcements
                   </button>
                 </div>
@@ -282,51 +323,9 @@ export default function SettingsPage() {
         {/* Users Tab */}
         {activeTab === "users" && (
           <div className="max-w-6xl">
-            <div className="flex justify-end gap-3 mb-4">
-              <button className="module-btn" onClick={() => setShowBulkInvite(true)}>
-                <MailPlus size={16} /> Bulk Invite
-              </button>
-              <button className="module-btn-primary" onClick={() => setShowAddUser(true)}>
-                <UserPlus size={16} /> Add User
-              </button>
-            </div>
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 border-b border-slate-200">
-                  <tr>
-                    <th className="px-6 py-4 font-semibold text-slate-600">Email</th>
-                    <th className="px-6 py-4 font-semibold text-slate-600">Role</th>
-                    <th className="px-6 py-4 font-semibold text-slate-600">Status</th>
-                    <th className="px-6 py-4 font-semibold text-slate-600 w-24">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {users.map((u, i) => (
-                    <tr key={i} className="hover:bg-slate-50/50">
-                      <td className="px-6 py-4 font-medium text-slate-800">{u.email}</td>
-                      <td className="px-6 py-4">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700">
-                          {u.role}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                            u.status === "Active"
-                              ? "bg-emerald-50 text-emerald-700"
-                              : "bg-slate-100 text-slate-600"
-                          }`}
-                        >
-                          {u.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <button className="text-blue-600 hover:underline text-xs font-bold">Edit</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="p-10 bg-slate-50 text-center rounded-2xl border border-slate-200">
+              <h3 className="font-bold text-slate-800 text-lg mb-2">User Management Moved</h3>
+              <p className="text-slate-500 text-sm">Please navigate to the Users tab in the sidebar to manage users.</p>
             </div>
           </div>
         )}

@@ -4,25 +4,15 @@ import {
   MapPin, CheckCircle, XCircle, Clock, AlertCircle, Download, X,
   Eye, UserCheck, RefreshCw, Lock, Send,
 } from 'lucide-react';
-import { useAuthStore, SEED_USERS } from '../../../stores/authStore';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '../../../security/auth.context';
+import { usersApi, type BackendUserDto } from '../../../api/users.api';
 import type { UserRole } from '../../../types/auth.types';
+import { toast } from 'sonner';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export interface PortalUser {
-  id: string;
-  name: string;
-  email: string;
-  mobile?: string;
-  role: UserRole;
-  district: string;
-  department?: string;
-  designation?: string;
-  status: 'active' | 'pending' | 'suspended';
-  joinedAt: string;
-  canUpload: boolean;
-  canReview: boolean;
-}
+export interface PortalUser extends BackendUserDto {}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -55,24 +45,12 @@ const ROLE_COLORS: Record<UserRole, { bg: string; text: string; border: string }
   'Auditor':        { bg: 'bg-slate-800/60',  text: 'text-slate-300',  border: 'border-slate-600/50' },
 };
 
-const STATUS_CONFIG = {
+const STATUS_CONFIG: Record<string, { label: string; icon: any; color: string; bg: string }> = {
   active:    { label: 'Active',    icon: CheckCircle, color: 'text-emerald-400', bg: 'bg-emerald-900/30 border-emerald-700/40' },
-  pending:   { label: 'Pending',   icon: Clock,       color: 'text-amber-400',   bg: 'bg-amber-900/30 border-amber-700/40' },
-  suspended: { label: 'Suspended', icon: XCircle,     color: 'text-red-400',     bg: 'bg-red-900/30 border-red-700/40' },
+  inactive:  { label: 'Inactive',  icon: XCircle,     color: 'text-red-400',     bg: 'bg-red-900/30 border-red-700/40' },
 };
 
-function useSeedUsers(): PortalUser[] {
-  return SEED_USERS.map((u, i) => ({
-    ...u,
-    mobile: `98765${String(i).padStart(5, '0')}`,
-    department: 'Mines & Geology Department',
-    designation: u.role,
-    status: i === 2 ? 'pending' : i === 4 ? 'suspended' : 'active',
-    joinedAt: new Date(Date.now() - i * 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    canUpload: ['Super Admin', 'State Admin', 'District Admin', 'Survey Lead', 'Field Surveyor', 'GIS Expert', 'Geologist', 'Environment'].includes(u.role),
-    canReview: ['Super Admin', 'State Admin', 'Reviewer', 'Approver', 'Auditor'].includes(u.role),
-  }));
-}
+// Removed mock data hook
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -86,8 +64,8 @@ function RoleBadge({ role }: { role: UserRole }) {
   );
 }
 
-function StatusBadge({ status }: { status: PortalUser['status'] }) {
-  const cfg = STATUS_CONFIG[status];
+function StatusBadge({ active }: { active: boolean }) {
+  const cfg = active ? STATUS_CONFIG.active : STATUS_CONFIG.inactive;
   return (
     <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold border ${cfg.bg} ${cfg.color}`}>
       <cfg.icon size={10} />
@@ -138,26 +116,26 @@ export function AddUserModal({ onClose, onSuccess }: AddUserModalProps) {
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validate()) return;
     setIsSubmitting(true);
-    setTimeout(() => {
-      onSuccess({
-        id: String(Date.now()),
-        name: form.name,
+    try {
+      await usersApi.invite({
         email: form.email,
-        mobile: form.mobile,
-        role: form.role as UserRole,
+        fullName: form.name,
+        role: form.role,
         district: form.district,
         department: form.department,
         designation: form.designation,
-        status: 'pending',
-        joinedAt: new Date().toISOString().split('T')[0],
-        canUpload: false,
-        canReview: false,
+        mobileNumber: form.mobile,
       });
+      toast.success(`Invitation sent to ${form.email}`);
+      onSuccess();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.response?.data?.error || 'Failed to send invitation');
+    } finally {
       setIsSubmitting(false);
-    }, 1000);
+    }
   };
 
   return (
@@ -318,29 +296,27 @@ export function BulkInviteModal({ onClose }: { onClose: () => void }) {
     if (f) handleFile(f);
   };
 
-  const handleProcess = () => {
+  const handleProcess = async () => {
     if (!file) return;
     setIsProcessing(true);
-    setTimeout(() => {
-      // Simulate processing
+    try {
+      const data = await usersApi.bulkInvite(file);
       setResult({
-        success: 7,
-        failed: [
-          { row: 3, email: 'invalid-email', reason: 'Invalid email format' },
-          { row: 6, email: 'existing@dsr.gov.in', reason: 'User already exists' },
-        ],
+        success: data.succeeded,
+        failed: data.failed.map((f, i) => ({ row: i + 1, email: f.email, reason: f.reason })),
       });
+      toast.success(`Successfully invited ${data.succeeded} users.`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.response?.data?.error || 'Failed to process bulk invite');
+    } finally {
       setIsProcessing(false);
-    }, 2000);
+    }
   };
 
   const downloadTemplate = () => {
-    const csv = 'Email,Phone,Role,District,Department,Designation\nuser@domain.gov.in,9876543210,SDO,Patiala,Mines & Geology,Sub-Divisional Officer\n';
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
+    const url = usersApi.downloadTemplate();
     const a = document.createElement('a');
-    a.href = url; a.download = 'bulk-invite-template.csv'; a.click();
-    URL.revokeObjectURL(url);
+    a.href = url; a.download = 'bulk-invite-template.xlsx'; a.click();
   };
 
   return (
@@ -510,77 +486,71 @@ function RoleDropdown({ currentRole, onUpdate, onClose }: {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export const UserManagementPanel: React.FC = () => {
-  const { user: currentUser, updateUserRole, loginAs } = useAuthStore();
-  const [portalUsers, setPortalUsers] = useState<PortalUser[]>(() => useSeedUsers());
+  const { user: currentUser, loginAs } = useAuth();
+  const queryClient = useQueryClient();
+
+  const { data: portalUsers = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: usersApi.list,
+  });
 
   const [search, setSearch] = useState('');
-  const [filterRole, setFilterRole] = useState<UserRole | 'All'>('All');
-  const [filterStatus, setFilterStatus] = useState<PortalUser['status'] | 'All'>('All');
+  const [filterRole, setFilterRole] = useState<string>('All');
+  const [filterStatus, setFilterStatus] = useState<string>('All');
   const [filterDistrict, setFilterDistrict] = useState('All');
   const [showAddUser, setShowAddUser] = useState(false);
   const [showBulkInvite, setShowBulkInvite] = useState(false);
   const [editingRole, setEditingRole] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' | 'info' } | null>(null);
-
-  const showToast = (msg: string, type: 'success' | 'error' | 'info' = 'success') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
-  };
 
   const filtered = portalUsers.filter(u => {
-    const matchSearch = !search || u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = !search || u.fullName.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase());
     const matchRole = filterRole === 'All' || u.role === filterRole;
-    const matchStatus = filterStatus === 'All' || u.status === filterStatus;
+    const matchStatus = filterStatus === 'All' || (filterStatus === 'active' ? u.active : !u.active);
     const matchDistrict = filterDistrict === 'All' || u.district === filterDistrict;
     return matchSearch && matchRole && matchStatus && matchDistrict;
   });
 
   const stats = {
     total: portalUsers.length,
-    active: portalUsers.filter(u => u.status === 'active').length,
-    pending: portalUsers.filter(u => u.status === 'pending').length,
-    suspended: portalUsers.filter(u => u.status === 'suspended').length,
+    active: portalUsers.filter(u => u.active).length,
+    inactive: portalUsers.filter(u => !u.active).length,
   };
 
-  const handleAddUser = (user: PortalUser) => {
-    setPortalUsers(prev => [user, ...prev]);
-    setShowAddUser(false);
-    showToast(`Invitation sent to ${user.email}`);
-  };
+  const updateRoleMutation = useMutation({
+    mutationFn: ({ id, role }: { id: string; role: string }) => usersApi.update(id, { role }),
+    onSuccess: () => {
+      toast.success('Role updated');
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to update role');
+    }
+  });
 
   const handleRoleUpdate = (userId: string, role: UserRole) => {
-    setPortalUsers(prev => prev.map(u => u.id === userId ? { ...u, role } : u));
-    updateUserRole(userId, role);
-    showToast(`Role updated to ${role}`, 'info');
+    updateRoleMutation.mutate({ id: userId, role });
   };
 
-  const handleStatusToggle = (userId: string) => {
-    setPortalUsers(prev => prev.map(u => {
-      if (u.id !== userId) return u;
-      const next: PortalUser['status'] = u.status === 'active' ? 'suspended' : 'active';
-      return { ...u, status: next };
-    }));
-    showToast('User status updated', 'info');
+  const toggleStatusMutation = useMutation({
+    mutationFn: ({ id, active }: { id: string; active: boolean }) => usersApi.setActive(id, active),
+    onSuccess: () => {
+      toast.success('User status updated');
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Failed to update user status');
+    }
+  });
+
+  const handleStatusToggle = (userId: string, active: boolean) => {
+    toggleStatusMutation.mutate({ id: userId, active: !active });
   };
 
   return (
     <div className="min-h-full bg-slate-950 text-white font-sans">
 
-      {/* Toast */}
-      {toast && (
-        <div className={`fixed top-4 right-4 z-[300] px-5 py-3 rounded-xl border shadow-2xl text-sm font-bold flex items-center gap-2 transition-all animate-[fadeInUp_0.2s_ease-out] ${
-          toast.type === 'success' ? 'bg-emerald-900/90 border-emerald-700 text-emerald-300' :
-          toast.type === 'error' ? 'bg-red-900/90 border-red-700 text-red-300' :
-          'bg-blue-900/90 border-blue-700 text-blue-300'
-        }`}>
-          {toast.type === 'success' ? <CheckCircle size={15} /> : toast.type === 'error' ? <XCircle size={15} /> : <AlertCircle size={15} />}
-          {toast.msg}
-        </div>
-      )}
-
-      {/* Modals */}
-      {showAddUser && <AddUserModal onClose={() => setShowAddUser(false)} onSuccess={handleAddUser} />}
-      {showBulkInvite && <BulkInviteModal onClose={() => setShowBulkInvite(false)} />}
+      {showAddUser && <AddUserModal onClose={() => setShowAddUser(false)} onSuccess={() => queryClient.invalidateQueries({ queryKey: ['users'] })} />}
+      {showBulkInvite && <BulkInviteModal onClose={() => { setShowBulkInvite(false); queryClient.invalidateQueries({ queryKey: ['users'] }); }} />}
 
       <div className="p-6 max-w-full">
         {/* Page Header */}
@@ -617,8 +587,7 @@ export const UserManagementPanel: React.FC = () => {
           {[
             { label: 'Total Users',  value: stats.total,    color: 'text-blue-400',    bg: 'bg-blue-900/20 border-blue-800/40' },
             { label: 'Active',       value: stats.active,   color: 'text-emerald-400', bg: 'bg-emerald-900/20 border-emerald-800/40' },
-            { label: 'Pending',      value: stats.pending,  color: 'text-amber-400',   bg: 'bg-amber-900/20 border-amber-800/40' },
-            { label: 'Suspended',    value: stats.suspended,color: 'text-red-400',     bg: 'bg-red-900/20 border-red-800/40' },
+            { label: 'Inactive',    value: stats.inactive,color: 'text-red-400',     bg: 'bg-red-900/20 border-red-800/40' },
           ].map(s => (
             <div key={s.label} className={`${s.bg} border rounded-xl p-4`}>
               <div className={`text-2xl font-black ${s.color}`}>{s.value}</div>
@@ -645,7 +614,7 @@ export const UserManagementPanel: React.FC = () => {
             {/* Role filter */}
             <select
               value={filterRole}
-              onChange={e => setFilterRole(e.target.value as UserRole | 'All')}
+              onChange={e => setFilterRole(e.target.value)}
               className="bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-semibold"
             >
               <option value="All">All Roles</option>
@@ -655,13 +624,12 @@ export const UserManagementPanel: React.FC = () => {
             {/* Status filter */}
             <select
               value={filterStatus}
-              onChange={e => setFilterStatus(e.target.value as PortalUser['status'] | 'All')}
+              onChange={e => setFilterStatus(e.target.value)}
               className="bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-semibold"
             >
               <option value="All">All Status</option>
               <option value="active">Active</option>
-              <option value="pending">Pending</option>
-              <option value="suspended">Suspended</option>
+              <option value="inactive">Inactive</option>
             </select>
 
             {/* District filter */}
@@ -679,7 +647,7 @@ export const UserManagementPanel: React.FC = () => {
               Showing <span className="text-slate-300">{filtered.length}</span> of <span className="text-slate-300">{portalUsers.length}</span> users
             </p>
             <p className="text-xs font-semibold text-slate-500">
-              Logged in as: <span className="text-blue-400">{currentUser?.name} ({currentUser?.role})</span>
+              Logged in as: <span className="text-blue-400">{currentUser?.fullName} ({currentUser?.uiRole})</span>
             </p>
           </div>
         </div>
@@ -715,11 +683,11 @@ export const UserManagementPanel: React.FC = () => {
                     {/* User */}
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
-                        <Avatar name={user.name} size="sm" />
+                        <Avatar name={user.fullName} size="sm" />
                         <div className="min-w-0">
-                          <p className="text-sm font-bold text-white truncate">{user.name}</p>
+                          <p className="text-sm font-bold text-white truncate">{user.fullName}</p>
                           <p className="text-xs text-slate-500 font-medium truncate">{user.email}</p>
-                          {user.mobile && <p className="text-xs text-slate-600 font-medium">{user.mobile}</p>}
+                          {user.mobileNumber && <p className="text-xs text-slate-600 font-medium">{user.mobileNumber}</p>}
                         </div>
                       </div>
                     </td>
@@ -731,12 +699,12 @@ export const UserManagementPanel: React.FC = () => {
                           onClick={() => setEditingRole(editingRole === user.id ? null : user.id)}
                           className="flex items-center gap-1 group/role"
                         >
-                          <RoleBadge role={user.role} />
+                          <RoleBadge role={user.role as UserRole} />
                           <ChevronDown size={12} className="text-slate-600 group-hover/role:text-slate-400 transition-colors" />
                         </button>
                         {editingRole === user.id && (
                           <RoleDropdown
-                            currentRole={user.role}
+                            currentRole={user.role as UserRole}
                             onUpdate={(role) => handleRoleUpdate(user.id, role)}
                             onClose={() => setEditingRole(null)}
                           />
@@ -748,57 +716,57 @@ export const UserManagementPanel: React.FC = () => {
                     <td className="px-5 py-4 hidden md:table-cell">
                       <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400">
                         <MapPin size={11} className="text-slate-600" />
-                        {user.district}
+                        {user.district || 'All'}
                       </div>
                     </td>
 
                     {/* Upload */}
                     <td className="px-5 py-4 hidden lg:table-cell">
                       <button
-                        onClick={() => setPortalUsers(prev => prev.map(u => u.id === user.id ? { ...u, canUpload: !u.canUpload } : u))}
-                        className={`w-8 h-4.5 rounded-full relative transition-all duration-200 ${user.canUpload ? 'bg-emerald-600' : 'bg-slate-700'}`}
+                        className={`w-8 h-4.5 rounded-full relative transition-all duration-200 bg-emerald-600`}
                         style={{ width: 32, height: 18 }}
+                        disabled
                       >
-                        <span className={`absolute top-0.5 w-3.5 h-3.5 bg-white rounded-full shadow transition-all duration-200 ${user.canUpload ? 'left-[14px]' : 'left-0.5'}`} style={{ width: 14, height: 14 }} />
+                        <span className={`absolute top-0.5 w-3.5 h-3.5 bg-white rounded-full shadow transition-all duration-200 left-[14px]`} style={{ width: 14, height: 14 }} />
                       </button>
                     </td>
 
                     {/* Review */}
                     <td className="px-5 py-4 hidden lg:table-cell">
                       <button
-                        onClick={() => setPortalUsers(prev => prev.map(u => u.id === user.id ? { ...u, canReview: !u.canReview } : u))}
-                        className={`relative transition-all duration-200 ${user.canReview ? 'bg-blue-600' : 'bg-slate-700'}`}
+                        className={`relative transition-all duration-200 bg-blue-600`}
                         style={{ width: 32, height: 18, borderRadius: 9 }}
+                        disabled
                       >
-                        <span className={`absolute top-0.5 bg-white rounded-full shadow transition-all duration-200 ${user.canReview ? 'left-[14px]' : 'left-0.5'}`} style={{ width: 14, height: 14 }} />
+                        <span className={`absolute top-0.5 bg-white rounded-full shadow transition-all duration-200 left-[14px]`} style={{ width: 14, height: 14 }} />
                       </button>
                     </td>
 
                     {/* Status */}
                     <td className="px-5 py-4">
-                      <StatusBadge status={user.status} />
+                      <StatusBadge active={user.active} />
                     </td>
 
                     {/* Joined */}
                     <td className="px-5 py-4 hidden xl:table-cell">
-                      <span className="text-xs font-semibold text-slate-500">{user.joinedAt}</span>
+                      <span className="text-xs font-semibold text-slate-500">{new Date(user.createdAt).toLocaleDateString()}</span>
                     </td>
 
                     {/* Actions */}
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
-                          onClick={() => { loginAs(user.id); showToast(`Logged in as ${user.name}`, 'info'); }}
+                          onClick={() => { loginAs(user.id); toast.info(`Logged in as ${user.fullName}`); }}
                           title="Login as this user"
                           className="w-8 h-8 bg-emerald-900/30 hover:bg-emerald-600 border border-emerald-700/40 hover:border-emerald-500 text-emerald-400 hover:text-white rounded-lg flex items-center justify-center transition-all"
                         >
                           <Eye size={13} />
                         </button>
                         <button
-                          onClick={() => handleStatusToggle(user.id)}
-                          title={user.status === 'active' ? 'Suspend user' : 'Activate user'}
+                          onClick={() => handleStatusToggle(user.id, user.active)}
+                          title={user.active ? 'Deactivate user' : 'Activate user'}
                           className={`w-8 h-8 border rounded-lg flex items-center justify-center transition-all ${
-                            user.status === 'active'
+                            user.active
                               ? 'bg-red-900/30 hover:bg-red-600 border-red-700/40 hover:border-red-500 text-red-400 hover:text-white'
                               : 'bg-emerald-900/30 hover:bg-emerald-600 border-emerald-700/40 hover:border-emerald-500 text-emerald-400 hover:text-white'
                           }`}

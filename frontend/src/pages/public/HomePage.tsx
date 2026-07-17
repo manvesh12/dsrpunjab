@@ -1,10 +1,24 @@
 import { ArrowRight, FileText, LifeBuoy, Map, Search, Bell, MapPin, Mail, Phone } from "lucide-react";
 import { Link } from "react-router-dom";
-import { usePublicSettingsStore } from "../../stores/publicSettingsStore";
+import { useQuery } from "@tanstack/react-query";
+import { settingsApi } from "../../api/settings.api";
 import ThemeToggle from "../../components/ui/ThemeToggle";
 
 export default function HomePage() {
-  const { announcements } = usePublicSettingsStore();
+  const { data: announcementsSetting } = useQuery({
+    queryKey: ["settings", "announcements"],
+    queryFn: () => settingsApi.get("announcements"),
+  });
+  
+  let announcements: any[] = [];
+  if (announcementsSetting?.value) {
+    try {
+      announcements = JSON.parse(announcementsSetting.value);
+    } catch (e) {
+      console.error("Failed to parse announcements", e);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-800 dark:text-slate-200 transition-colors">
       {/* Pre-header */}

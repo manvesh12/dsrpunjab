@@ -60,10 +60,10 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
           <span className="hidden text-left sm:block">
             <span className="block text-sm font-semibold text-slate-800 dark:text-slate-200">
-              {user?.name || "User"}
+              {user?.fullName || user?.username || "User"}
             </span>
             <span className="block text-xs text-slate-500 dark:text-slate-400">
-              {user?.role ? user.role.replace(/_/g, " ") : "Guest"}
+              {user?.uiRole || "Guest"}
             </span>
           </span>
         </button>

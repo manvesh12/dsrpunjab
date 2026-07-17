@@ -42,7 +42,11 @@ export class SmtpBrevoEmailProvider implements EmailDeliveryProvider {
   }
 
   private async sendWithBrevo(message: EmailMessage): Promise<EmailSendResult> {
-    if (!this.config.brevoApiKey) throw new Error("BREVO_API_KEY is not configured");
+    if (!this.config.brevoApiKey) {
+      logger.warn("No SMTP credentials or BREVO_API_KEY configured. Falling back to console email logger.");
+      logger.info(`\n========== EMAIL INTERCEPTED ==========\nTo: ${message.to}\nSubject: ${message.subject}\nText:\n${message.text}\n=======================================\n`);
+      return { messageId: `mock-id-${Date.now()}` };
+    }
     const response = await fetch("https://api.brevo.com/v3/smtp/email", {
       method: "POST",
       headers: {

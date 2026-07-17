@@ -1,10 +1,8 @@
 import React from 'react';
 import { useAuth } from '../../security/auth.context';
-import type { Permission } from '../../security/permissions';
-import { hasPermission } from '../../security/permissions';
 
 interface AccessControlProps {
-  requiredPermissions?: Permission[];
+  requiredPermissions?: string[];
   children: React.ReactNode;
   fallback?: React.ReactNode;
 }
@@ -14,7 +12,7 @@ export const AccessControl: React.FC<AccessControlProps> = ({
   children, 
   fallback = null 
 }) => {
-  const { user } = useAuth();
+  const { user, hasAnyPermission } = useAuth();
 
   if (!user) return <>{fallback}</>;
 
@@ -22,7 +20,7 @@ export const AccessControl: React.FC<AccessControlProps> = ({
     return <>{children}</>;
   }
 
-  const hasAccess = requiredPermissions.some(p => hasPermission(user.role, p));
+  const hasAccess = hasAnyPermission(requiredPermissions);
 
   if (hasAccess) {
     return <>{children}</>;

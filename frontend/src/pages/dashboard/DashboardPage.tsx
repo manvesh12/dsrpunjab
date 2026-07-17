@@ -64,8 +64,17 @@ const workflowSteps = [
   { title: "Sequential E-Signing", sub: "5-level authority hierarchy · Final signed PDF", active: false, done: false },
 ];
 
+import { useQuery } from "@tanstack/react-query";
+import { settingsApi } from "../../api/settings.api";
+
+// ... stats, recentProjects, workflowSteps ... (leaving unchanged since they are outside this block)
+
 export default function DashboardPage() {
-  const { noticeText } = usePublicSettingsStore();
+  const { data: noticeSetting } = useQuery({
+    queryKey: ["settings", "notice_text"],
+    queryFn: () => settingsApi.get("notice_text"),
+  });
+  const noticeText = noticeSetting?.value || "Welcome to the DSR Automation Portal.";
 
   return (
     <div className="space-y-6 lg:space-y-8 animate-[fadeInUp_0.5s_ease-out_forwards]">
@@ -79,13 +88,13 @@ export default function DashboardPage() {
         </div>
         <div className="flex-1 overflow-hidden relative h-6">
           <div className="absolute inset-y-0 left-0 flex items-center hover:[animation-play-state:paused] animate-[marquee-horizontal_30s_linear_infinite] whitespace-nowrap text-sm font-bold text-slate-700 dark:text-slate-300">
-            <span className="mx-8">{noticeText || "Welcome to the DSR Automation Portal."}</span>
-            <span className="mx-8">{noticeText || "Welcome to the DSR Automation Portal."}</span>
-            <span className="mx-8">{noticeText || "Welcome to the DSR Automation Portal."}</span>
+            <span className="mx-8">{noticeText}</span>
+            <span className="mx-8">{noticeText}</span>
+            <span className="mx-8">{noticeText}</span>
             {/* Duplicated for seamless loop */}
-            <span className="mx-8">{noticeText || "Welcome to the DSR Automation Portal."}</span>
-            <span className="mx-8">{noticeText || "Welcome to the DSR Automation Portal."}</span>
-            <span className="mx-8">{noticeText || "Welcome to the DSR Automation Portal."}</span>
+            <span className="mx-8">{noticeText}</span>
+            <span className="mx-8">{noticeText}</span>
+            <span className="mx-8">{noticeText}</span>
           </div>
         </div>
       </div>

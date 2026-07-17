@@ -5,6 +5,9 @@ import {
   ShieldCheck, Eye, EyeOff, CheckCircle2, Home, AlertCircle,
   FileCheck2, UsersRound, ScanSearch, ChevronRight
 } from "lucide-react";
+import { toast } from "sonner";
+import { authApi } from "../../api/auth.api";
+import { useAuth } from "../../security/auth.context";
 
 const PUNJAB_DISTRICTS = [
   "Amritsar", "Barnala", "Bathinda", "Faridkot", "Fatehgarh Sahib",
@@ -115,6 +118,7 @@ export default function RegisterPage() {
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [otpTimer, setOtpTimer] = useState(600);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { login } = useAuth();
 
   const isInvited = !!inviteToken;
 
@@ -162,14 +166,28 @@ export default function RegisterPage() {
     if (validateDetails()) setStep("password");
   };
 
-  const handlePasswordNext = () => {
+  const handlePasswordNext = async () => {
     if (!validatePassword()) return;
+    if (!isInvited) {
+      toast.error("Public registration is currently disabled. Please contact your administrator for an invitation link.");
+      return;
+    }
+    
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
+    try {
+      await authApi.registerInvited({
+        token: inviteToken!,
+        password: form.password,
+        fullName: form.fullName,
+      });
       setStep("otp");
       setOtpTimer(600);
-    }, 1200);
+      toast.success("OTP sent to your email.");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.response?.data?.error || "Registration failed. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleOtpChange = (idx: number, val: string) => {
@@ -188,15 +206,37 @@ export default function RegisterPage() {
     }
   };
 
-  const handleVerifyOtp = () => {
+  const handleVerifyOtp = async () => {
     const enteredOtp = otp.join("");
-    if (enteredOtp.length < 6) return;
+    if (enteredOtp.length < 6 || !isInvited) return;
+    
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
-      // In real app: verify OTP with backend
+    try {
+      const data = await authApi.verifyInvitedOtp({
+        token: inviteToken!,
+        otp: enteredOtp,
+      });
+      // Optionally login the user since verifyInvitedOtp returns LoginResponse
+      login(data);
       setStep("success");
-    }, 1200);
+      toast.success("Registration verified successfully!");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.response?.data?.error || "Invalid OTP. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+  
+  const handleResendOtp = async () => {
+    if (!isInvited) return;
+    try {
+      await authApi.resendInvitedOtp(inviteToken!);
+      setOtpTimer(600);
+      setOtp(["", "", "", "", "", ""]);
+      toast.success("A new OTP has been sent to your email.");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.response?.data?.error || "Failed to resend OTP.");
+    }
   };
 
   const formatTime = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
@@ -609,7 +649,7 @@ export default function RegisterPage() {
 
               {otpTimer === 0 && (
                 <button
-                  onClick={() => { setOtpTimer(600); setOtp(["", "", "", "", "", ""]); }}
+                  onClick={handleResendOtp}
                   className="w-full mt-3 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded-xl py-3 font-bold text-sm transition-all"
                 >
                   Resend OTP

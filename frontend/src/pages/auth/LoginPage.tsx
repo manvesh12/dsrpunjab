@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { ArrowRight, Lock, User, ShieldCheck, Home, FileCheck2, UsersRound, ScanSearch, Eye } from "lucide-react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
+import { toast } from "sonner";
 import { useAuth } from "../../security/auth.context";
+import { authApi } from "../../api/auth.api";
 
 export default function LoginPage() {
   const [activeTab, setActiveTab] = useState<"staff" | "authority">("staff");
@@ -16,41 +18,31 @@ export default function LoginPage() {
   const location = useLocation();
   const { login } = useAuth();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const [error, setError] = useState<string | null>(null);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setError(null);
     
-    // Simulate backend API call
-    setTimeout(() => {
-      let role = "SUPER_ADMIN";
-      const loginEmail = activeTab === "staff" ? email : nicId;
-      
-      if (loginEmail.includes("deo") || loginEmail.includes("data")) {
-        role = "DATA_ENTRY_OPERATOR";
-      } else if (loginEmail.includes("reviewer") || loginEmail.includes("review")) {
-        role = "REVIEWER";
-      } else if (loginEmail.includes("district")) {
-        role = "DISTRICT_ADMIN";
-      }
-      
-      // Mock a successful login response matching our AuthState
-      login({
-        accessToken: "mock_jwt_token_header.mock_jwt_token_payload.mock_signature",
-        user: {
-          id: activeTab === "staff" ? "usr_staff" : "usr_gov",
-          name: activeTab === "staff" ? "Staff Coordinator" : "Govt Authority",
-          email: activeTab === "staff" ? (email || "staff@punjab.gov.in") : (nicId || "nic_admin"),
-          role: role as any,
-          department: "DSR Administration",
-        },
-      });
+    const identifier = activeTab === "staff" ? email.trim() : nicId.trim();
+    const credential = activeTab === "staff" ? password : pin;
 
-      setIsLoading(false);
-      
-      // Redirect to the page they tried to visit, or dashboard
+    try {
+      const data = await authApi.login({ username: identifier, password: credential });
+      login(data);
+      toast.success(`Welcome back, ${data.fullName || data.username}!`);
       const from = location.state?.from?.pathname || "/dashboard";
       navigate(from, { replace: true });
-    }, 1200);
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        "Invalid username or password. Please try again.";
+      setError(msg);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -180,7 +172,7 @@ export default function LoginPage() {
                     <div>
                       <div className="flex justify-between items-center mb-2">
                         <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Password</label>
-                        <a href="#" className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">Forgot?</a>
+                        <Link to="/auth/forgot-password" className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">Forgot?</Link>
                       </div>
                       <div className="relative">
                         <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
@@ -196,19 +188,21 @@ export default function LoginPage() {
                     </div>
                   </div>
 
+                  {error && (
+                    <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-sm font-semibold px-4 py-3 rounded-xl">
+                      {error}
+                    </div>
+                  )}
+
                   <button 
                     type="submit"
                     disabled={isLoading}
                     className="w-full bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white rounded-xl py-4 font-bold text-lg shadow-lg shadow-blue-600/30 transition-all flex justify-center items-center gap-2 group disabled:opacity-70 disabled:cursor-not-allowed mt-2"
                   >
-                    {isLoading ? "Authenticating..." : (
+                    {isLoading ? "Authenticating…" : (
                       <>Login to Portal <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" /></>
                     )}
                   </button>
-                  
-                  <div className="text-center text-sm font-semibold text-slate-500 dark:text-slate-400 pt-4">
-                    Don't have an account? <Link to="/register" className="text-blue-600 dark:text-blue-400 hover:underline font-bold">Sign Up</Link>
-                  </div>
                 </form>
               ) : (
                 <form onSubmit={handleLogin} className="space-y-6">
