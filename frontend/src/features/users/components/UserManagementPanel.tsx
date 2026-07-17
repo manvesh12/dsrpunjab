@@ -510,14 +510,13 @@ function RoleDropdown({ currentRole, onUpdate, onClose }: {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export const UserManagementPanel: React.FC = () => {
-  const { users: _storeUsers, user: currentUser, updateUserRole, loginAs } = useAuthStore();
+  const { user: currentUser, updateUserRole, loginAs } = useAuthStore();
   const [portalUsers, setPortalUsers] = useState<PortalUser[]>(() => useSeedUsers());
 
   const [search, setSearch] = useState('');
   const [filterRole, setFilterRole] = useState<UserRole | 'All'>('All');
   const [filterStatus, setFilterStatus] = useState<PortalUser['status'] | 'All'>('All');
   const [filterDistrict, setFilterDistrict] = useState('All');
-  const [showFilters, _setShowFilters] = useState(false);
   const [showAddUser, setShowAddUser] = useState(false);
   const [showBulkInvite, setShowBulkInvite] = useState(false);
   const [editingRole, setEditingRole] = useState<string | null>(null);
@@ -737,7 +736,6 @@ export const UserManagementPanel: React.FC = () => {
                         </button>
                         {editingRole === user.id && (
                           <RoleDropdown
-                            userId={user.id}
                             currentRole={user.role}
                             onUpdate={(role) => handleRoleUpdate(user.id, role)}
                             onClose={() => setEditingRole(null)}
