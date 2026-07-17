@@ -20,12 +20,14 @@ import ChaptersPage from "../pages/dsr-builder/ChaptersPage";
 import PlatesPage from "../pages/dsr-builder/PlatesPage";
 import CrossSectionGraphsPage from "../pages/dsr-builder/CrossSectionGraphsPage";
 import LoginPage from "../pages/auth/LoginPage";
+import RegisterPage from "../pages/auth/RegisterPage";
 import HomePage from "../pages/public/HomePage";
 import SettingsPage from "../pages/settings/SettingsPage";
 import AuditPage from "../pages/audit/AuditPage";
 import UsersPage from "../pages/users/UsersPage";
 import ReportsPage from "../pages/reports/ReportsPage";
 import AnalyticsPage from "../pages/analytics/AnalyticsPage";
+import ImportDsrPage from "../pages/import-dsr/ImportDsrPage";
 const portalModules = {
   workflow: { title:"Workflow", description:"Track review, observations and approval stages", columns:[{key:"report",label:"Report"},{key:"stage",label:"Current Stage"},{key:"assignee",label:"Assigned To"},{key:"due",label:"Due Date",type:"date" as const},{key:"status",label:"Status"}] },
   districts: { title:"Districts", description:"Punjab district information and DSR coverage", columns:[{key:"district",label:"District"},{key:"rivers",label:"Rivers"},{key:"projects",label:"DSR Projects",type:"number" as const},{key:"officer",label:"District Officer"},{key:"status",label:"Status"}] },
@@ -48,6 +50,8 @@ export default function AppRoutes() {
 
       {/* Public routes */}
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
+      <Route path="/register/complete" element={<RegisterPage />} />
 
       {/* Portal routes */}
       <Route element={
@@ -132,6 +136,15 @@ export default function AppRoutes() {
         <Route
           path="/settings"
           element={<SettingsPage />}
+        />
+
+        <Route
+          path="/import-previous-dsr"
+          element={
+            <RoleGuard roles={["SUPER_ADMIN", "STATE_ADMIN"]} fallback={<NotAccessible />}>
+              <ImportDsrPage />
+            </RoleGuard>
+          }
         />
       </Route>
 

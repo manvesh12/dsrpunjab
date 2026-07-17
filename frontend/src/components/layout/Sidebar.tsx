@@ -19,6 +19,7 @@ const RoutePermissionMap: Record<string, Permission[]> = {
   "/users": ["view_all"],
   "/audit": ["view_all"],
   "/settings": ["view_all"],
+  "/import-previous-dsr": ["view_all"],
 };
 
 type SidebarProps = {

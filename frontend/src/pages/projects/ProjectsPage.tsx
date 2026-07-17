@@ -1,4 +1,4 @@
-import { Plus, Search, FolderKanban } from "lucide-react";
+import { Plus, Search, FolderKanban, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import PageHeader from "../../components/layout/PageHeader";
@@ -59,7 +59,7 @@ const statusStyles: Record<ProjectStatus, string> = {
 
 export default function ProjectsPage() {
   const navigate = useNavigate();
-  const [projects] = useState<Project[]>(() => {
+  const [projects, setProjects] = useState<Project[]>(() => {
     try {
       const local = JSON.parse(localStorage.getItem("dsr:projects") || "[]") as Project[];
       return [...local, ...demoProjects];
@@ -70,6 +70,17 @@ export default function ProjectsPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("All");
 
+  const handleDeleteProject = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (!window.confirm("Are you sure you want to delete this project?")) return;
+    
+    setProjects(prev => {
+      const next = prev.filter(p => p.id !== id);
+      const local = next.filter(p => !demoProjects.find(d => d.id === p.id));
+      localStorage.setItem("dsr:projects", JSON.stringify(local));
+      return next;
+    });
+  };
   const filteredProjects = useMemo(() => {
     return projects.filter((project) => {
       const searchValue = search.toLowerCase();
@@ -139,13 +150,22 @@ export default function ProjectsPage() {
             onClick={() => navigate(`/projects/${project.id}`)}
             className="group relative flex cursor-pointer flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:border-blue-200"
           >
-            <div className="mb-5">
-              <h3 className="text-lg font-black text-slate-900 leading-tight group-hover:text-blue-700 transition-colors">
-                {project.projectName}
-              </h3>
-              <p className="mt-1 text-xs font-semibold text-slate-500">
-                {project.district} District • {project.financialYear}
-              </p>
+            <div className="mb-5 flex justify-between items-start">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 leading-tight group-hover:text-blue-700 transition-colors">
+                  {project.projectName}
+                </h3>
+                <p className="mt-1 text-xs font-semibold text-slate-500">
+                  {project.district} District • {project.financialYear}
+                </p>
+              </div>
+              <button
+                onClick={(e) => handleDeleteProject(e, project.id)}
+                className="rounded-lg p-2 text-slate-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
+                title="Delete Project"
+              >
+                <Trash2 size={18} />
+              </button>
             </div>
 
             <div className="mb-6 flex flex-wrap gap-2">

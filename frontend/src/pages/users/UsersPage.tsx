@@ -1,10 +1,5 @@
-
-import { UserList } from '../../features/users/components/UserList';
+import { UserManagementPanel } from '../../features/users/components/UserManagementPanel';
 
 export default function UsersPage() {
-  return (
-    <div style={{ padding: '24px', height: '100%', boxSizing: 'border-box', backgroundColor: '#f3f4f6' }}>
-      <UserList />
-    </div>
-  );
+  return <UserManagementPanel />;
 }

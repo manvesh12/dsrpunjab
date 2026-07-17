@@ -10,6 +10,7 @@ import {
   Settings,
   ShieldCheck,
   Users,
+  FileUp,
 } from "lucide-react";
 
 export const navigationItems = [
@@ -65,6 +66,11 @@ export const adminNavigationItems = [
     label: "Settings",
     path: "/settings",
     icon: Settings,
+  },
+  {
+    label: "Import Previous DSR",
+    path: "/import-previous-dsr",
+    icon: FileUp,
   },
 ];
 
