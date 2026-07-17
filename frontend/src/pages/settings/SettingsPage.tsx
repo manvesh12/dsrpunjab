@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Settings,
   UserCircle,
@@ -42,7 +42,6 @@ export default function SettingsPage() {
   const [localAnnouncements, setLocalAnnouncements] = useState<any[]>([]);
 
   // Update local state when data loads
-  import { useEffect } from "react";
   useEffect(() => {
     if (noticeSetting?.value) setLocalNoticeText(noticeSetting.value);
   }, [noticeSetting]);
