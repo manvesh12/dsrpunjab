@@ -1,6 +1,5 @@
 import React from "react";
-// @ts-ignore
-import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
+import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from "react-resizable-panels";
 import { GripVertical } from "lucide-react";
 
 interface ResizableLayoutProps {
@@ -23,7 +22,7 @@ export default function ResizableLayout({
   className = "",
 }: ResizableLayoutProps) {
   return (
-    <PanelGroup direction="horizontal" className={`w-full ${className}`}>
+    <PanelGroup orientation="horizontal" className={`w-full ${className}`}>
       <Panel defaultSize={leftPanelDefaultSize} minSize={leftPanelMinSize} className="pr-2">
         <div className="h-full w-full overflow-y-auto overflow-x-hidden">
           {leftPanel}
