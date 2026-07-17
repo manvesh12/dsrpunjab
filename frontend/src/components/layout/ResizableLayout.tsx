@@ -1,4 +1,5 @@
 import React from "react";
+// @ts-ignore
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { GripVertical } from "lucide-react";
 

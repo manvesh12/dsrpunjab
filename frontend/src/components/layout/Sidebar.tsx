@@ -2,7 +2,6 @@ import { ChevronLeft, ChevronRight, LogOut, X } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import {
   adminNavigationItems,
-  appDetails,
   navigationItems,
 } from "../../utils/constants";
 import { useAuth } from "../../security/auth.context";

@@ -3,7 +3,6 @@ import { useParams, Link } from "react-router-dom";
 import {
   CheckCircle2,
   Circle,
-  Clock,
   Lock,
   CheckCheck,
   Send,

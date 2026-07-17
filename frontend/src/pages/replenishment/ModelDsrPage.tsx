@@ -161,7 +161,7 @@ async function fetchReportsFromServer(projectId: string): Promise<ModelDsrReport
   }
 }
 
-async function saveReportToServer(projectId: string, report: ModelDsrReport) {
+async function saveReportToServer(_projectId: string, report: ModelDsrReport) {
   if (!report.id) return;
   try {
     await apiClient.put(`/replenishment/${report.id}`, {
@@ -1041,7 +1041,7 @@ function DraggableSectionItem({
 
   const handleFrontMatterUpload = (
     e: React.ChangeEvent<HTMLInputElement>,
-    subId: string,
+    _subId: string,
     uploadKey: string
   ) => {
     const file = e.target.files?.[0];
