@@ -1,13 +1,22 @@
 import { Prisma, ReportStatus } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 import { assertProjectDistrictAccess } from "../authorization/project-access.policy.js";
 import { ApiError } from "../common/exceptions/api-error.js";
 import { logger } from "../common/logging/logger.js";
 import type { AuthUser } from "../authentication/auth-user.js";
+import { projectReplenishmentObjectKey } from "../storage/project-storage.js";
+import { storageService, type StorageService } from "../storage/storage.service.js";
+import { settleBestEffort } from "../storage/storage-cleanup.js";
+import { CONTENT_TYPES_BY_EXTENSION } from "../uploads/upload.constants.js";
+import { displayFileName, safeFileName, validateUpload } from "../uploads/upload.validator.js";
 import { MAX_SYNCABLE_PROJECT_STATE_BYTES } from "./replenishment.constants.js";
 import { replenishmentRepository, type ReplenishmentRepositoryContract } from "./replenishment.repository.js";
 
 export class ReplenishmentService {
-  constructor(private readonly repository: ReplenishmentRepositoryContract) {}
+  constructor(
+    private readonly repository: ReplenishmentRepositoryContract,
+    private readonly storage: Pick<StorageService, "putFile" | "getFile" | "deleteFile"> = storageService
+  ) {}
 
   async list(projectId: bigint, user: AuthUser) {
     const project = await this.repository.findProject(projectId);
@@ -100,7 +109,12 @@ export class ReplenishmentService {
     const existing = await this.repository.findByIdWithProject(id);
     if (!existing) throw new ApiError(404, "REPLENISHMENT_NOT_FOUND", "Replenishment study not found");
     assertProjectDistrictAccess(existing.project, user);
+    const files = await this.repository.files(id);
     await this.repository.delete(id);
+    await settleBestEffort("replenishment_delete", files.map(file => ({
+      target: file.objectKey,
+      run: () => this.storage.deleteFile(file.objectKey)
+    })));
     return { message: "Replenishment study deleted" };
   }
 
@@ -161,13 +175,68 @@ export class ReplenishmentService {
     });
   }
 
-  async upload(id: string, body: any, user: AuthUser) {
+  async upload(id: string, input: {
+    sectionId: unknown;
+    originalName: string;
+    bytes: Buffer;
+    declaredContentType: string;
+  }, user: AuthUser) {
     const existing = await this.repository.findById(id);
     if (!existing) throw new ApiError(404, "REPLENISHMENT_NOT_FOUND", "Replenishment study not found");
     const project = await this.repository.findProject(existing.projectId);
     assertProjectDistrictAccess(project, user);
-    // Real implementation will link to S3 and create ReplenishmentFile record
-    return { success: true, objectKey: `fake-object-key-${Date.now()}` };
+    const extension = validateUpload(input.originalName, input.bytes);
+    const originalName = displayFileName(input.originalName);
+    const storedFileName = safeFileName(originalName);
+    const sectionId = safeFileName(String(input.sectionId || "upload")).replace(/\./g, "") || "upload";
+    const objectKey = projectReplenishmentObjectKey(
+      existing.projectId,
+      safeFileName(id),
+      sectionId,
+      `${randomUUID()}-${storedFileName}`
+    );
+    const contentType = CONTENT_TYPES_BY_EXTENSION[extension] || input.declaredContentType || "application/octet-stream";
+    await this.storage.putFile(objectKey, input.bytes, contentType);
+    try {
+      return await this.repository.createFile({
+        replenishmentId: id,
+        sectionId,
+        fileName: originalName,
+        objectKey,
+        contentType,
+        sizeBytes: input.bytes.byteLength,
+        uploadedBy: user.id
+      });
+    } catch (error) {
+      await settleBestEffort("replenishment_upload_metadata_rollback", [{
+        target: objectKey,
+        run: () => this.storage.deleteFile(objectKey)
+      }]);
+      throw error;
+    }
+  }
+
+  async downloadFile(id: string, fileId: string, user: AuthUser) {
+    const file = await this.repository.findFile(fileId);
+    if (!file || file.replenishmentId !== id) {
+      throw new ApiError(404, "REPLENISHMENT_FILE_NOT_FOUND", "Replenishment file not found");
+    }
+    assertProjectDistrictAccess(file.replenishment.project, user);
+    return { file, bytes: await this.storage.getFile(file.objectKey) };
+  }
+
+  async deleteFile(id: string, fileId: string, user: AuthUser) {
+    const file = await this.repository.findFile(fileId);
+    if (!file || file.replenishmentId !== id) {
+      throw new ApiError(404, "REPLENISHMENT_FILE_NOT_FOUND", "Replenishment file not found");
+    }
+    assertProjectDistrictAccess(file.replenishment.project, user);
+    await this.repository.deleteFile(file.id);
+    await settleBestEffort("replenishment_file_delete", [{
+      target: file.objectKey,
+      run: () => this.storage.deleteFile(file.objectKey)
+    }]);
+    return { success: true, message: "Replenishment file deleted" };
   }
 
   async workflow(id: string, body: any, user: AuthUser) {
@@ -218,4 +287,4 @@ export class ReplenishmentService {
   }
 }
 
-export const replenishmentService = new ReplenishmentService(replenishmentRepository);
+export const replenishmentService = new ReplenishmentService(replenishmentRepository, storageService);

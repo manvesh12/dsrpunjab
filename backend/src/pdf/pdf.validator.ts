@@ -8,7 +8,13 @@ export function pdfProjectId(value: unknown) {
   return BigInt(normalized);
 }
 
-export function pdfAnnexureId(value: unknown) { return boundedString(value || "anx3", 32); }
+export function pdfAnnexureId(value: unknown) {
+  const normalized = boundedString(value || "anx3", 32);
+  if (!/^[a-zA-Z0-9_-]+$/.test(normalized)) {
+    throw new ApiError(400, "PDF_ANNEXURE_INVALID", "Invalid annexure identifier");
+  }
+  return normalized;
+}
 export function pdfFileName(value: unknown) { return boundedString(value, 255); }
 
 export function decodePdf(value: unknown) {

@@ -3,6 +3,7 @@ import {
   Download,
   Eye,
   FileUp,
+  LoaderCircle,
   Plus,
   Save,
   Trash2,
@@ -11,6 +12,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
+import { uploadsApi } from "../../api/uploads.api";
 import PageHeader from "../layout/PageHeader";
 import { useLocalDraft } from "../../hooks/useLocalDraft";
 
@@ -31,12 +33,21 @@ type ModuleEditorProps = {
   showLivePreview?: boolean;
   onRowsChange?: (rows: Record<string, string>[]) => void;
   editableStructure?: boolean;
+  projectId?: string | number;
+  uploadModule?: string;
+  uploadRequirementId?: string;
   onSnapshotChange?: (snapshot: {
     title: string;
     columns: EditorColumn[];
     rows: Record<string, string>[];
     attachments: string[];
   }) => void;
+};
+
+type ProjectAttachment = {
+  name: string;
+  id?: string;
+  savedName?: string;
 };
 
 export default function ModuleEditor({
@@ -51,6 +62,9 @@ export default function ModuleEditor({
   onRowsChange,
   editableStructure = false,
   onSnapshotChange,
+  projectId,
+  uploadModule = "annexures",
+  uploadRequirementId = "attachment",
 }: ModuleEditorProps) {
   const [rows, setRows] = useLocalDraft<Record<string, string>[]>(
     storageKey,
@@ -64,13 +78,60 @@ export default function ModuleEditor({
     `${storageKey}:columns`,
     columns,
   );
-  const [attachments, setAttachments] = useLocalDraft<string[]>(
-    `${storageKey}:attachments`,
-    [],
-  );
+  const [attachments, setAttachments] = useLocalDraft<
+    (string | ProjectAttachment)[]
+  >(`${storageKey}:attachments`, []);
+  const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const [preview, setPreview] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const snapshotCallback = useRef(onSnapshotChange);
+
+  useEffect(() => {
+    if (projectId === undefined || !/^\d+$/.test(String(projectId))) return;
+    let active = true;
+    void Promise.all([
+      uploadsApi.list({
+        projectId,
+        module: uploadModule,
+        requirementId: uploadRequirementId,
+      }),
+      uploadsApi.list({
+        projectId,
+        module: uploadModule,
+        requirementId: `${uploadRequirementId}-template`,
+      }),
+    ])
+      .then(([attachmentFiles, templateFiles]) => {
+        if (!active) return;
+        const remoteFiles = [...attachmentFiles, ...templateFiles].sort(
+          (left, right) =>
+            Date.parse(right.uploadedAt) - Date.parse(left.uploadedAt),
+        );
+        setAttachments((current) => {
+          const legacy = current.filter(
+            (attachment) =>
+              typeof attachment === "string" ||
+              (!attachment.id && !attachment.savedName),
+          );
+          if (!remoteFiles.length) return legacy;
+          const remote = remoteFiles.map((file) => ({
+            name: file.originalName || file.fileName,
+            id: file.id,
+            savedName: file.savedName,
+          }));
+          const remoteNames = new Set(remote.map(attachmentName));
+          const uniqueLegacy = legacy.filter(
+            (attachment) => !remoteNames.has(attachmentName(attachment)),
+          );
+          return [...remote, ...uniqueLegacy];
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [projectId, setAttachments, uploadModule, uploadRequirementId]);
+
   useEffect(() => {
     snapshotCallback.current = onSnapshotChange;
   }, [onSnapshotChange]);
@@ -82,7 +143,9 @@ export default function ModuleEditor({
         title: editableTitle,
         columns: editableColumns,
         rows,
-        attachments,
+        attachments: attachments.map((attachment) =>
+          typeof attachment === "string" ? attachment : attachment.name,
+        ),
       }),
     [attachments, editableColumns, editableTitle, rows],
   );
@@ -112,6 +175,63 @@ export default function ModuleEditor({
     XLSX.utils.book_append_sheet(workbook, sheet, "Template");
     XLSX.writeFile(workbook, `${storageKey}-template.xlsx`);
   };
+  const storeProjectFiles = async (
+    files: File[],
+    requirementId = uploadRequirementId,
+  ) => {
+    if (!files.length) return;
+    if (projectId === undefined) {
+      setAttachments((current) => {
+        const existing = new Set(current.map(attachmentName));
+        return [
+          ...current,
+          ...files
+            .map((file) => file.name)
+            .filter((name) => !existing.has(name)),
+        ];
+      });
+      toast.success(
+        `${files.length} attachment${files.length === 1 ? "" : "s"} added`,
+      );
+      return;
+    }
+    if (!/^\d+$/.test(String(projectId))) {
+      toast.error("Open a valid project before uploading files.");
+      return;
+    }
+
+    setUploadingAttachments(true);
+    const results = await Promise.allSettled(
+      files.map(async (file) => {
+        const uploaded = await uploadsApi.upload(file, {
+          projectId,
+          module: uploadModule,
+          requirementId,
+        });
+        return {
+          name: uploaded.originalName || file.name,
+          id: uploaded.id,
+          savedName: uploaded.savedName,
+        } satisfies ProjectAttachment;
+      }),
+    );
+    const uploaded = results.flatMap((result) =>
+      result.status === "fulfilled" ? [result.value] : [],
+    );
+    const failed = results.length - uploaded.length;
+    if (uploaded.length) {
+      setAttachments((current) => [...current, ...uploaded]);
+      toast.success(
+        `${uploaded.length} file${uploaded.length === 1 ? "" : "s"} uploaded to this project`,
+      );
+    }
+    if (failed) {
+      toast.error(
+        `${failed} file${failed === 1 ? "" : "s"} could not be uploaded`,
+      );
+    }
+    setUploadingAttachments(false);
+  };
   const importCsv = async (file: File) => {
     const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -136,17 +256,29 @@ export default function ModuleEditor({
     setEditableColumns(importedColumns);
     setRows(importedRows);
     toast.success(`${importedRows.length} entries imported`);
+    await storeProjectFiles([file], `${uploadRequirementId}-template`);
   };
   const addAttachments = (files: FileList | null) => {
     if (!files?.length) return;
-    const names = Array.from(files).map((file) => file.name);
-    setAttachments((current) => [
-      ...current,
-      ...names.filter((name) => !current.includes(name)),
-    ]);
-    toast.success(
-      `${names.length} attachment${names.length === 1 ? "" : "s"} added`,
+    void storeProjectFiles(Array.from(files));
+  };
+  const removeAttachment = async (index: number) => {
+    const target = attachments[index];
+    if (typeof target !== "string" && projectId !== undefined) {
+      const identifier = target.savedName || target.id;
+      if (identifier) {
+        try {
+          await uploadsApi.delete(identifier, projectId);
+        } catch {
+          toast.error("Attachment could not be deleted from the project.");
+          return;
+        }
+      }
+    }
+    setAttachments((current) =>
+      current.filter((_, attachmentIndex) => attachmentIndex !== index),
     );
+    toast.success("Attachment removed");
   };
   const addColumn = () => {
     const index = editableColumns.length + 1;
@@ -181,6 +313,7 @@ export default function ModuleEditor({
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => fileRef.current?.click()}
+                disabled={uploadingAttachments}
                 className="module-btn"
               >
                 <Upload size={17} /> Upload CSV
@@ -206,9 +339,12 @@ export default function ModuleEditor({
         type="file"
         accept=".csv,.xlsx,.xls"
         hidden
-        onChange={(event) =>
-          event.target.files?.[0] && importCsv(event.target.files[0])
-        }
+        disabled={uploadingAttachments}
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file) void importCsv(file);
+        }}
       />
       {guidance && (
         <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
@@ -236,18 +372,30 @@ export default function ModuleEditor({
           <div className="ml-3 flex flex-wrap gap-2">
             <button
               onClick={() => fileRef.current?.click()}
+              disabled={uploadingAttachments}
               className="module-btn"
             >
               <Upload size={17} /> Upload Template
             </button>
-            <label className="module-btn cursor-pointer">
-              <FileUp size={17} /> Upload File
+            <label
+              className={`module-btn cursor-pointer ${uploadingAttachments ? "pointer-events-none opacity-60" : ""}`}
+            >
+              {uploadingAttachments ? (
+                <LoaderCircle size={17} className="animate-spin" />
+              ) : (
+                <FileUp size={17} />
+              )}
+              {uploadingAttachments ? "Uploading..." : "Upload File"}
               <input
                 type="file"
-                accept=".pdf,.doc,.docx,.xlsx,.xls,.csv,image/*"
+                accept=".pdf,.xlsx,.xls,.csv,.jpg,.jpeg,.png,.tif,.tiff,.kml,.kmz,.shp,.dwg,.las,.laz"
                 multiple
                 hidden
-                onChange={(event) => addAttachments(event.target.files)}
+                disabled={uploadingAttachments}
+                onChange={(event) => {
+                  addAttachments(event.target.files);
+                  event.target.value = "";
+                }}
               />
             </label>
             <button onClick={downloadTemplate} className="module-btn">
@@ -351,7 +499,25 @@ export default function ModuleEditor({
             </div>
             {attachments.length > 0 && (
               <div className="border-t bg-slate-50 px-5 py-3 text-sm text-slate-600">
-                <strong>Attached files:</strong> {attachments.join(", ")}
+                <strong>Attached files:</strong>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {attachments.map((attachment, index) => (
+                    <span
+                      key={`${attachmentName(attachment)}-${index}`}
+                      className="inline-flex items-center gap-1 rounded-lg border bg-white px-2 py-1"
+                    >
+                      {attachmentName(attachment)}
+                      <button
+                        type="button"
+                        aria-label={`Remove ${attachmentName(attachment)}`}
+                        onClick={() => void removeAttachment(index)}
+                        className="rounded p-0.5 text-red-500 hover:bg-red-50"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
               </div>
             )}
             {showLivePreview && (
@@ -371,6 +537,10 @@ export default function ModuleEditor({
       </section>
     </>
   );
+}
+
+function attachmentName(attachment: string | ProjectAttachment) {
+  return typeof attachment === "string" ? attachment : attachment.name;
 }
 
 function DocumentPreview({

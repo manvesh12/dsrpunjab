@@ -31,7 +31,35 @@ export class ReplenishmentController {
     this.respond(res, next, () => this.service.saveState(replenishmentId(req.params.id), req.body, req.user!));
 
   upload = async (req: Request, res: Response, next: NextFunction) =>
-    this.respond(res, next, () => this.service.upload(replenishmentId(req.params.id), req.body, req.user!));
+    this.respond(res, next, () => this.service.upload(replenishmentId(req.params.id), {
+      sectionId: req.body?.sectionId,
+      originalName: req.file?.originalname || "",
+      bytes: req.file?.buffer || Buffer.alloc(0),
+      declaredContentType: req.file?.mimetype || ""
+    }, req.user!), 201);
+
+  downloadFile = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { file, bytes } = await this.service.downloadFile(
+        replenishmentId(req.params.id),
+        replenishmentId(req.params.fileId),
+        req.user!
+      );
+      const inline = String(req.query.inline || "false") === "true";
+      res.setHeader("Content-Type", file.contentType || "application/octet-stream");
+      res.setHeader("Content-Disposition", `${inline ? "inline" : "attachment"}; filename="${encodeURIComponent(file.fileName)}"`);
+      res.send(bytes);
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  deleteFile = async (req: Request, res: Response, next: NextFunction) =>
+    this.respond(res, next, () => this.service.deleteFile(
+      replenishmentId(req.params.id),
+      replenishmentId(req.params.fileId),
+      req.user!
+    ));
 
   workflow = async (req: Request, res: Response, next: NextFunction) =>
     this.respond(res, next, () => this.service.workflow(replenishmentId(req.params.id), req.body, req.user!));

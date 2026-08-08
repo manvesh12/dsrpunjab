@@ -1,5 +1,6 @@
 import PageHeader from "../../components/layout/PageHeader";
 import ResizableLayout from "../../components/layout/ResizableLayout";
+import FileUpload from "../../components/ui/FileUpload";
 import ModuleEditor from "../../components/ui/ModuleEditor";
 import type { EditorColumn } from "../../components/ui/ModuleEditor";
 import { useState } from "react";
@@ -108,7 +109,12 @@ export default function AdditionalAnnexureEditorPage({
   const [snapshots, setSnapshots] = useState<
     Record<
       number,
-      { title: string; columns: EditorColumn[]; rows: Record<string, string>[]; attachments?: string[] }
+      {
+        title: string;
+        columns: EditorColumn[];
+        rows: Record<string, string>[];
+        attachments?: string[];
+      }
     >
   >({});
   return (
@@ -150,17 +156,23 @@ export default function AdditionalAnnexureEditorPage({
         }
       />
       <div className="h-[calc(100vh-14rem)] flex">
-        <ResizableLayout 
-          leftPanelDefaultSize={60} rightPanelDefaultSize={40}
+        <ResizableLayout
+          leftPanelDefaultSize={60}
+          rightPanelDefaultSize={40}
           leftPanel={
             <div className="min-w-0 pb-12">
-              {uploadOnly.includes(letter) && <UploadPanel letter={letter} />}{" "}
+              {uploadOnly.includes(letter) && (
+                <UploadPanel letter={letter} projectId={projectId} />
+              )}{" "}
               {items.map((item, index) => (
                 <ModuleEditor
                   key={item.title}
                   embedded
                   editableStructure
                   showLivePreview={false}
+                  projectId={projectId}
+                  uploadModule="additional-annexures"
+                  uploadRequirementId={`annexure-${letter.toLowerCase()}-${index}`}
                   storageKey={`project-${projectId}:annexure-${letter.toLowerCase()}-${index}`}
                   title={item.title}
                   description="Original IIT DSR table format"
@@ -181,22 +193,23 @@ export default function AdditionalAnnexureEditorPage({
                           },
                         ]
                       : letter === "F" && index === 0
-                      ? [
-                          {
-                            sl_no: "1",
-                            river_details: "Sutlej River",
-                            sand_bar_code: "SB-01",
-                            lease_details: "Ludhiana Lease",
-                            area_ha_: "12.5",
-                            latitude: "30.900965",
-                            longitude: "75.857277",
-                          },
-                        ]
-                      : []
+                        ? [
+                            {
+                              sl_no: "1",
+                              river_details: "Sutlej River",
+                              sand_bar_code: "SB-01",
+                              lease_details: "Ludhiana Lease",
+                              area_ha_: "12.5",
+                              latitude: "30.900965",
+                              longitude: "75.857277",
+                            },
+                          ]
+                        : []
                   }
                   onSnapshotChange={(snapshot) =>
                     setSnapshots((current) =>
-                      JSON.stringify(current[index]) === JSON.stringify(snapshot)
+                      JSON.stringify(current[index]) ===
+                      JSON.stringify(snapshot)
                         ? current
                         : { ...current, [index]: snapshot },
                     )
@@ -283,27 +296,32 @@ export default function AdditionalAnnexureEditorPage({
   );
 }
 
-function UploadPanel({ letter }: { letter: string }) {
+function UploadPanel({
+  letter,
+  projectId,
+}: {
+  letter: string;
+  projectId: string;
+}) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <h2 className="font-bold">Annexure {letter} Entries</h2>
       <p className="mt-1 text-sm text-slate-500">
         Uploaded PDF pages or images will be appended to the final annexure.
       </p>
-      <label className="mt-5 flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 text-center hover:border-blue-400 hover:bg-blue-50">
-        <span className="font-semibold text-slate-700">
-          Select PDF or images
-        </span>
-        <span className="mt-1 text-sm text-slate-500">
-          PDF, PNG or JPG • multiple files supported
-        </span>
-        <input
-          type="file"
-          accept="application/pdf,image/*"
+      <div className="mt-5">
+        <FileUpload
+          projectId={projectId}
+          storageKey={`project-${projectId}:annexure-${letter.toLowerCase()}:uploads`}
+          moduleName="additional-annexures"
+          requirementId={`annexure-${letter.toLowerCase()}`}
+          label="Select PDF or images"
+          hint="PDF, PNG or JPG • multiple files supported"
+          accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff"
           multiple
-          className="hidden"
+          showPreview={false}
         />
-      </label>
+      </div>
     </section>
   );
 }

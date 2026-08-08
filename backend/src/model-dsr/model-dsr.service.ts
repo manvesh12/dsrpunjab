@@ -1,5 +1,5 @@
 import { GeneratedDsrStatus, ModelDsrStatus, Prisma } from "@prisma/client";
-import { assertProjectDistrictAccess } from "../authorization/project-access.policy.js";
+import { assertProjectDistrictAccess, assertProjectUnlocked } from "../authorization/project-access.policy.js";
 import { ApiError } from "../common/exceptions/api-error.js";
 import type { AuthUser } from "../authentication/auth-user.js";
 import { modelDsrRepository, type ModelDsrRepositoryContract } from "./model-dsr.repository.js";
@@ -113,6 +113,7 @@ export class ModelDsrService {
     const project = await this.repository.findProject(projectId);
     if (!project) throw new ApiError(404, "TARGET_PROJECT_NOT_FOUND", "Target Project not found");
     assertProjectDistrictAccess(project, user);
+    assertProjectUnlocked(project);
     const config = body.config || {};
     const state = parseProjectState(project.projectState);
     const importedAt = new Date().toISOString();

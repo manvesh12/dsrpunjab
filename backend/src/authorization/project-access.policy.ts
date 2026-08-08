@@ -24,3 +24,9 @@ export function assertProjectDistrictAccess<T extends any>(project: T | null, us
     throw new ApiError(403, "PROJECT_DISTRICT_FORBIDDEN", "This project belongs to another district.");
   }
 }
+
+export function assertProjectUnlocked(project: { phaseLocked?: boolean | null }) {
+  if (project.phaseLocked) {
+    throw new ApiError(409, "PROJECT_PHASE_LOCKED", "This project phase is locked and cannot be modified");
+  }
+}

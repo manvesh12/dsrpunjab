@@ -1,4 +1,12 @@
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  CopyObjectCommand,
+  DeleteObjectCommand,
+  DeleteObjectsCommand,
+  GetObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Readable } from "node:stream";
 import type { Environment } from "../config/environment.js";
@@ -29,6 +37,54 @@ export class S3StorageProvider implements StorageProvider {
 
   async delete(objectKey: string) {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.environment.s3Bucket, Key: objectKey }));
+  }
+
+  async copy(sourceObjectKey: string, destinationObjectKey: string) {
+    const copySource = encodeURIComponent(`${this.environment.s3Bucket}/${sourceObjectKey}`).replace(/%2F/g, "/");
+    await this.client.send(new CopyObjectCommand({
+      Bucket: this.environment.s3Bucket,
+      CopySource: copySource,
+      Key: destinationObjectKey,
+    }));
+  }
+
+  async ensurePrefix(prefix: string) {
+    const key = `${prefix.replace(/\/+$/, "")}/.keep`;
+    await this.client.send(new PutObjectCommand({
+      Bucket: this.environment.s3Bucket,
+      Key: key,
+      Body: Buffer.alloc(0),
+      ContentType: "application/octet-stream",
+    }));
+  }
+
+  async deletePrefix(prefix: string) {
+    const normalizedPrefix = `${prefix.replace(/\/+$/, "")}/`;
+    let continuationToken: string | undefined;
+    do {
+      const listed = await this.client.send(new ListObjectsV2Command({
+        Bucket: this.environment.s3Bucket,
+        Prefix: normalizedPrefix,
+        ContinuationToken: continuationToken,
+      }));
+      const objects = (listed.Contents || [])
+        .map((entry) => entry.Key)
+        .filter((key): key is string => Boolean(key))
+        .map((Key) => ({ Key }));
+      if (objects.length) {
+        const deleted = await this.client.send(new DeleteObjectsCommand({
+          Bucket: this.environment.s3Bucket,
+          Delete: { Objects: objects, Quiet: true },
+        }));
+        if (deleted.Errors?.length) {
+          const failures = deleted.Errors
+            .map(error => `${error.Key || "unknown key"}: ${error.Message || error.Code || "delete failed"}`)
+            .join(", ");
+          throw new Error(`Some project objects could not be deleted: ${failures}`);
+        }
+      }
+      continuationToken = listed.IsTruncated ? listed.NextContinuationToken : undefined;
+    } while (continuationToken);
   }
 
   signedDownloadUrl(objectKey: string, expiresIn: number) {

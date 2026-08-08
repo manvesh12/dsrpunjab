@@ -19,10 +19,18 @@ export function safeFileName(fileName: string) {
     .slice(0, 180) || "upload.bin";
 }
 
+export function displayFileName(fileName: string) {
+  return String(fileName || "upload.bin")
+    .replace(/[\\/]/g, "-")
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .trim()
+    .slice(0, 255) || "upload.bin";
+}
+
 export function validateUpload(originalName: string, bytes: Buffer) {
   const extension = extensionOf(originalName);
   if (!ALLOWED_FILE_EXTENSIONS.has(extension)) {
-    throw new ApiError(400, "FILE_FORMAT_UNSUPPORTED", "Unsupported file format for replenishment upload");
+    throw new ApiError(400, "FILE_FORMAT_UNSUPPORTED", "Unsupported file format");
   }
   if (!bytes.length) throw new ApiError(400, "FILE_REQUIRED", "File is required");
   if (bytes.byteLength > MAX_FILE_SIZE_BYTES) {

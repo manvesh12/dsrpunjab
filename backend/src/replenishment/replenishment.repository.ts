@@ -29,7 +29,11 @@ export class ReplenishmentRepository {
   }
 
   list(projectId: bigint) {
-    return this.database.replenishmentStudy.findMany({ where: { projectId }, orderBy: { createdAt: "desc" } });
+    return this.database.replenishmentStudy.findMany({
+      where: { projectId },
+      include: { files: true },
+      orderBy: { createdAt: "desc" }
+    });
   }
 
   create(data: Prisma.ReplenishmentStudyUncheckedCreateInput) {
@@ -41,7 +45,7 @@ export class ReplenishmentRepository {
   findByIdWithProjectDistrict(id: string) {
     return this.database.replenishmentStudy.findUnique({
       where: { id },
-      include: { project: { select: { district: true } } }
+      include: { files: true, project: { select: { district: true } } }
     });
   }
 
@@ -53,12 +57,31 @@ export class ReplenishmentRepository {
     return this.database.replenishmentStudy.update({ where: { id }, data });
   }
 
+  createFile(data: Prisma.ReplenishmentFileUncheckedCreateInput) {
+    return this.database.replenishmentFile.create({ data });
+  }
+
+  files(replenishmentId: string) {
+    return this.database.replenishmentFile.findMany({ where: { replenishmentId } });
+  }
+
+  findFile(id: string) {
+    return this.database.replenishmentFile.findUnique({
+      where: { id },
+      include: { replenishment: { include: { project: true } } }
+    });
+  }
+
+  deleteFile(id: string) {
+    return this.database.replenishmentFile.delete({ where: { id } });
+  }
+
   delete(id: string) { return this.database.replenishmentStudy.delete({ where: { id } }); }
 }
 
 export type ReplenishmentRepositoryContract = Pick<
   ReplenishmentRepository,
-  "findProject" | "findProjectForSync" | "findApprovedDsrs" | "list" | "create" | "findById" | "findByIdWithProjectDistrict" | "findByIdWithProject" | "update" | "delete"
+  "findProject" | "findProjectForSync" | "findApprovedDsrs" | "list" | "create" | "findById" | "findByIdWithProjectDistrict" | "findByIdWithProject" | "update" | "createFile" | "files" | "findFile" | "deleteFile" | "delete"
 >;
 
 export const replenishmentRepository = new ReplenishmentRepository(prisma);

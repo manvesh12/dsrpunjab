@@ -1,8 +1,11 @@
-import { assertProjectDistrictAccess } from "../authorization/project-access.policy.js";
+import { assertProjectDistrictAccess, assertProjectUnlocked } from "../authorization/project-access.policy.js";
+import { randomUUID } from "node:crypto";
 import { ApiError } from "../common/exceptions/api-error.js";
 import type { AuthUser } from "../authentication/auth-user.js";
 import { canAdmin, canUpload } from "../authorization/role.policy.js";
 import { storageService, type StorageService } from "../storage/storage.service.js";
+import { projectPdfObjectKey } from "../storage/project-storage.js";
+import { settleBestEffort } from "../storage/storage-cleanup.js";
 import { FINAL_PDF_ADMIN_MESSAGE } from "./pdf.constants.js";
 import { pdfRepository, type PdfRepositoryContract } from "./pdf.repository.js";
 import { decodePdf, pdfAnnexureId, pdfFileName, pdfProjectId } from "./pdf.validator.js";
@@ -20,15 +23,19 @@ export class PdfService {
     this.authorize(annexureId, user, true);
     const project = await this.repository.findProject(projectId);
     assertProjectDistrictAccess(project, user);
-    const key = this.objectKey(projectId, annexureId);
+    assertProjectUnlocked(project);
     if (!fileName || body?.pdf == null) {
-      await this.storage.deleteFile(key).catch(() => undefined);
-      await this.repository.deleteMetadata(projectId, annexureId);
+      const previousFile = await this.repository.deleteMetadata(projectId, annexureId);
+      if (previousFile) await settleBestEffort("pdf_delete", [{
+        target: previousFile.objectKey,
+        run: () => this.storage.deleteFile(previousFile.objectKey)
+      }]);
       return { success: true };
     }
     const bytes = decodePdf(body.pdf);
+    const key = this.objectKey(projectId, annexureId);
     await this.storage.putFile(key, bytes, "application/pdf");
-    await this.repository.upsertFile(projectId, annexureId, fileName, key, bytes.byteLength);
+    let updatedProjectState: string | undefined;
     if (annexureId === "final") {
       let state: Record<string, unknown> = {};
       try {
@@ -36,9 +43,30 @@ export class PdfService {
         if (typeof state === "string") state = JSON.parse(state);
       } catch { state = {}; }
       state.finalPdfGeneratedAt = new Date().toISOString();
-      await this.repository.updateProjectState(projectId, JSON.stringify(state));
+      updatedProjectState = JSON.stringify(state);
     }
-    await this.repository.createWorkflow(projectId, `Uploaded document '${fileName}' for Annexure ${annexureId}`, user.id);
+    let saved: Awaited<ReturnType<PdfRepositoryContract["saveUpload"]>>;
+    try {
+      saved = await this.repository.saveUpload({
+        projectId,
+        annexureId,
+        fileName,
+        objectKey: key,
+        sizeBytes: bytes.byteLength,
+        projectState: updatedProjectState,
+        remarks: `Uploaded document '${fileName}' for Annexure ${annexureId}`,
+        performedBy: user.id
+      });
+    } catch (error) {
+      await settleBestEffort("pdf_metadata_rollback", [{ target: key, run: () => this.storage.deleteFile(key) }]);
+      throw error;
+    }
+    if (saved.previousObjectKey && saved.previousObjectKey !== key) {
+      await settleBestEffort("pdf_replacement", [{
+        target: saved.previousObjectKey,
+        run: () => this.storage.deleteFile(saved.previousObjectKey!)
+      }]);
+    }
     return { success: true };
   }
 
@@ -70,7 +98,9 @@ export class PdfService {
     if (upload && !canUpload(user.role) && !canAdmin(user.role)) throw new ApiError(403, "ACCESS_DENIED", "Access denied");
   }
 
-  private objectKey(projectId: bigint, annexureId: string) { return `${annexureId}-${projectId}.pdf`; }
+  private objectKey(projectId: bigint, annexureId: string) {
+    return projectPdfObjectKey(projectId, annexureId, randomUUID());
+  }
 }
 
 export const pdfService = new PdfService(pdfRepository, storageService);

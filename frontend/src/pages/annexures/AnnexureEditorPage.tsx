@@ -366,8 +366,9 @@ export default function AnnexureEditorPage({ annexure }: { annexure: string }) {
         automatically.
       </div>
       <div className="h-[calc(100vh-14rem)] flex">
-        <ResizableLayout 
-          leftPanelDefaultSize={60} rightPanelDefaultSize={40}
+        <ResizableLayout
+          leftPanelDefaultSize={60}
+          rightPanelDefaultSize={40}
           leftPanel={
             <div className="min-w-0 pb-12">
               {Array.from({ length: total }, (_, index) => {
@@ -382,6 +383,9 @@ export default function AnnexureEditorPage({ annexure }: { annexure: string }) {
                     embedded
                     editableStructure
                     showLivePreview={false}
+                    projectId={projectId}
+                    uploadModule="annexures"
+                    uploadRequirementId={`annexure-${annexure}-${index}`}
                     storageKey={`project-${projectId}:annexure-${annexure}-${index}`}
                     title={item.title}
                     description={item.description}
@@ -392,44 +396,46 @@ export default function AnnexureEditorPage({ annexure }: { annexure: string }) {
                             {
                               river_name_m_sand_plant: "Sutlej River",
                               total_stretch_of_river_in_km: "45",
-                              type_of_river_perennial_or_non_perennial: "Perennial",
+                              type_of_river_perennial_or_non_perennial:
+                                "Perennial",
                             },
                           ]
                         : annexure === "2" && index === 0
-                        ? [
-                            {
-                              sl_no: "1",
-                              river_details: "Sutlej River",
-                              sand_bar_code: "SB-01",
-                              lease_details: "Ludhiana Lease",
-                              area_ha: "12.5",
-                              latitude: "30.900965",
-                              longitude: "75.857277",
-                              distance_from_pa_wc_km: "10.5",
-                              within_500m_cluster_area: "No",
-                              bulk_density_gm_cc: "1.65",
-                              depth_of_deposit_m: "3.0",
-                              total_excavation_mt_yr: "618750",
-                              total_excavation_net_60: "371250",
-                              mineral: "Sand",
-                              existing_proposed: "Proposed",
-                              remarks: "Pending EC",
-                            }
-                          ]
-                        : annexure === "3" && index === 0
-                        ? [
-                            {
-                              river_name: "Sutlej",
-                              cluster_no: "CL-01",
-                              lease_no: "L-01, L-02",
-                              location_riverbed_patta_land: "Riverbed",
-                              village: "Phillaur",
-                              area_in_ha: "25.0",
-                              total_excavation_mt: "1237500",
-                              total_mineral_excavation_mt_considering_60_as_per_emgsm_2020: "742500",
-                            }
-                          ]
-                        : []
+                          ? [
+                              {
+                                sl_no: "1",
+                                river_details: "Sutlej River",
+                                sand_bar_code: "SB-01",
+                                lease_details: "Ludhiana Lease",
+                                area_ha: "12.5",
+                                latitude: "30.900965",
+                                longitude: "75.857277",
+                                distance_from_pa_wc_km: "10.5",
+                                within_500m_cluster_area: "No",
+                                bulk_density_gm_cc: "1.65",
+                                depth_of_deposit_m: "3.0",
+                                total_excavation_mt_yr: "618750",
+                                total_excavation_net_60: "371250",
+                                mineral: "Sand",
+                                existing_proposed: "Proposed",
+                                remarks: "Pending EC",
+                              },
+                            ]
+                          : annexure === "3" && index === 0
+                            ? [
+                                {
+                                  river_name: "Sutlej",
+                                  cluster_no: "CL-01",
+                                  lease_no: "L-01, L-02",
+                                  location_riverbed_patta_land: "Riverbed",
+                                  village: "Phillaur",
+                                  area_in_ha: "25.0",
+                                  total_excavation_mt: "1237500",
+                                  total_mineral_excavation_mt_considering_60_as_per_emgsm_2020:
+                                    "742500",
+                                },
+                              ]
+                            : []
                     }
                     onSnapshotChange={(snapshot) => update(index, snapshot)}
                   />
@@ -447,7 +453,9 @@ export default function AnnexureEditorPage({ annexure }: { annexure: string }) {
                   <p className="text-xs font-bold uppercase tracking-[.2em]">
                     Government of Punjab
                   </p>
-                  <h1 className="mt-3 text-xl font-bold uppercase">{data.title}</h1>
+                  <h1 className="mt-3 text-xl font-bold uppercase">
+                    {data.title}
+                  </h1>
                   <p className="mt-1 text-xs text-slate-500">
                     District Survey Report
                   </p>
@@ -456,11 +464,15 @@ export default function AnnexureEditorPage({ annexure }: { annexure: string }) {
                   const fallback = data.items[index];
                   const snap = snapshots[index];
                   const labels =
-                    snap?.columns.map((c) => c.label) ?? fallback?.columns ?? [];
+                    snap?.columns.map((c) => c.label) ??
+                    fallback?.columns ??
+                    [];
                   return (
                     <section key={index} className="mt-7">
                       <h2 className="border-b pb-2 text-sm font-bold">
-                        {snap?.title ?? fallback?.title ?? `New Table ${index + 1}`}
+                        {snap?.title ??
+                          fallback?.title ??
+                          `New Table ${index + 1}`}
                       </h2>
                       <PreviewSection labels={labels} rows={snap?.rows ?? []} />
                     </section>

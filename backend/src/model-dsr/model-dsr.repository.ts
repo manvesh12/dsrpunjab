@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
+import { ApiError } from "../common/exceptions/api-error.js";
 import { prisma } from "../database/prisma.client.js";
 import type { NormalizedSection } from "./section-normalizer.js";
 
@@ -66,6 +67,13 @@ export class ModelDsrRepository {
   findProject(id: bigint) { return this.database.project.findUnique({ where: { id } }); }
   importIntoProject(projectId: bigint, projectState: string, remarks: string, performedBy?: bigint) {
     return this.database.$transaction(async tx => {
+      const unlocked = await tx.project.updateMany({
+        where: { id: projectId, phaseLocked: false },
+        data: { phaseLocked: false }
+      });
+      if (unlocked.count !== 1) {
+        throw new ApiError(409, "PROJECT_PHASE_LOCKED", "This project phase is locked and cannot be modified");
+      }
       await tx.project.update({ where: { id: projectId }, data: { projectState } });
       await tx.workflowHistory.create({
         data: { reportId: projectId, action: "MODEL_DSR_IMPORTED", remarks, performedBy }

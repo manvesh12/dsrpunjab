@@ -26,5 +26,5 @@ test("failed metadata persistence compensates the stored object", async () => {
   const service = new UploadsService(repository, storage);
   await assert.rejects(() => service.upload({ projectIdValue: "5", originalName: "survey.pdf", bytes: Buffer.from("pdf") }, admin));
   assert.equal(deleted.length, 1);
-  assert.match(deleted[0], /^files\/5\/replenishment\/upload\//);
+  assert.match(deleted[0], /^projects\/5\/files\/replenishment\/upload\//);
 });

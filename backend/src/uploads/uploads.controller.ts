@@ -6,6 +6,19 @@ import { uploadsService, type UploadsService } from "./uploads.service.js";
 export class UploadsController {
   constructor(private readonly service: UploadsService) {}
 
+  list = async (req: Request, res: Response) => {
+    try {
+      res.json(await this.service.list(
+        req.query.projectId,
+        req.query.module,
+        req.query.requirementId,
+        req.user!
+      ));
+    } catch (error) {
+      this.uploadError(res, error);
+    }
+  };
+
   upload = async (req: Request, res: Response) => {
     try {
       const uploaded = req.file;
@@ -33,7 +46,7 @@ export class UploadsController {
       res.setHeader("Content-Disposition", `${inline ? "inline" : "attachment"}; filename="${encodeURIComponent(file.fileName)}"`);
       res.send(bytes);
     } catch (error) {
-      if (error instanceof ApiError && error.code.startsWith("PROJECT_")) {
+      if (error instanceof ApiError && error.code !== "FILE_NOT_FOUND") {
         res.status(error.status).json({ error: error.message });
         return;
       }

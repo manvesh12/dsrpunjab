@@ -45,6 +45,8 @@ services:
       - .env.production
     ports:
       - "8080:8080"
+    volumes:
+      - uploads_data:/app/uploads
     command: npm run start
 
   worker:
@@ -76,3 +78,4 @@ services:
 volumes:
   postgres_data:
   minio_data:
+  uploads_data:
