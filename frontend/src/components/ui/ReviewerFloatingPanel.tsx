@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useParams } from "react-router-dom";
 import {
   MessageSquarePlus,
@@ -86,15 +86,12 @@ export default function ReviewerFloatingPanel() {
   const [selectedRecipients, setSelectedRecipients] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
 
-  const [notifs, setNotifs] = useState<ReviewNotification[]>([]);
-  const [showNotifBadge, setShowNotifBadge] = useState(false);
-
-  // Load notifications on mount / when panel opens
-  useEffect(() => {
-    const loaded = loadNotifications(projectId);
-    setNotifs(loaded);
-    setShowNotifBadge(loaded.some((n) => !n.read));
-  }, [projectId, open]);
+  const [notifs, setNotifs] = useState<ReviewNotification[]>(() =>
+    loadNotifications(projectId)
+  );
+  const [showNotifBadge, setShowNotifBadge] = useState(() =>
+    loadNotifications(projectId).some((notification) => !notification.read)
+  );
 
   const resetPanel = () => {
     setStep("select");
@@ -106,6 +103,16 @@ export default function ReviewerFloatingPanel() {
   const closePanel = () => {
     setOpen(false);
     resetPanel();
+  };
+
+  const togglePanel = () => {
+    if (!open) {
+      const loaded = loadNotifications(projectId);
+      setNotifs(loaded);
+      setShowNotifBadge(loaded.some((notification) => !notification.read));
+      resetPanel();
+    }
+    setOpen((previous) => !previous);
   };
 
   const toggleRecipient = (id: string) => {
@@ -160,7 +167,7 @@ export default function ReviewerFloatingPanel() {
   return (
     <>
       {/* ── Floating Trigger Button ── */}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+      <div className="fixed bottom-24 right-4 z-50 flex flex-col items-end gap-3 sm:right-6">
         {/* Notification badge bubble */}
         {showNotifBadge && !open && (
           <div className="animate-bounce rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700 shadow-md">
@@ -169,15 +176,20 @@ export default function ReviewerFloatingPanel() {
         )}
 
         <button
-          onClick={() => { setOpen((p) => !p); if (!open) resetPanel(); }}
-          className={`relative flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg transition-all duration-200 hover:scale-105 active:scale-95 ${
+          onClick={togglePanel}
+          className={`relative flex h-12 items-center justify-center gap-2 rounded-full px-5 shadow-lg transition-all duration-200 hover:scale-105 active:scale-95 ${
             open
               ? "bg-slate-700 text-white"
               : "bg-blue-600 text-white shadow-blue-200 hover:bg-blue-700"
           }`}
           title="Reviewer Notes"
+          aria-label={open ? "Close reviewer notes" : "Open reviewer notes"}
+          aria-expanded={open}
         >
-          {open ? <X size={22} /> : <MessageSquarePlus size={22} />}
+          {open ? <X size={20} /> : <MessageSquarePlus size={20} />}
+          <span className="text-sm font-semibold">
+            {open ? "Close Notes" : "Reviewer Notes"}
+          </span>
           {showNotifBadge && !open && (
             <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">
               {notifs.filter((n) => !n.read).length}
@@ -188,7 +200,7 @@ export default function ReviewerFloatingPanel() {
 
       {/* ── Review Panel ── */}
       {open && (
-        <div className="fixed bottom-24 right-6 z-50 w-[380px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div className="fixed bottom-40 right-4 z-50 w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:right-6 sm:w-[380px]">
           {/* Header */}
           <div className="flex items-center justify-between bg-gradient-to-r from-blue-700 to-blue-600 px-4 py-3.5">
             <div className="flex items-center gap-2 text-white">
