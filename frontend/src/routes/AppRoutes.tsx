@@ -13,6 +13,7 @@ import ProjectDetailsPage from "../pages/projects/ProjectDetailsPage";
 import ReplenishmentBuilderPage from "../pages/replenishment/ReplenishmentBuilderPage";
 import ModelDsrPage from "../pages/replenishment/ModelDsrPage";
 import ReviewerPage from "../pages/workflow/ReviewerPage";
+import WorkflowLandingPage from "../pages/workflow/WorkflowLandingPage";
 import AnnexuresPage from "../pages/annexures/AnnexuresPage";
 import ReportPreviewPage from "../pages/reports/ReportPreviewPage";
 import FrontMatterPage from "../pages/dsr-builder/FrontMatterPage";
@@ -28,6 +29,7 @@ import UsersPage from "../pages/users/UsersPage";
 import ReportsPage from "../pages/reports/ReportsPage";
 import AnalyticsPage from "../pages/analytics/AnalyticsPage";
 import ImportDsrPage from "../pages/import-dsr/ImportDsrPage";
+import NotificationsPage from "../pages/notifications/NotificationsPage";
 const portalModules = {
   workflow: { title:"Workflow", description:"Track review, observations and approval stages", columns:[{key:"report",label:"Report"},{key:"stage",label:"Current Stage"},{key:"assignee",label:"Assigned To"},{key:"due",label:"Due Date",type:"date" as const},{key:"status",label:"Status"}] },
   districts: { title:"Districts", description:"Punjab district information and DSR coverage", columns:[{key:"district",label:"District"},{key:"rivers",label:"Rivers"},{key:"projects",label:"DSR Projects",type:"number" as const},{key:"officer",label:"District Officer"},{key:"status",label:"Status"}] },
@@ -81,7 +83,7 @@ export default function AppRoutes() {
         <Route path="/projects/:projectId" element={<ProjectDetailsPage />} />
         
         {/* Data Entry & Project Editing Routes */}
-        <Route element={<RoleGuard roles={["SUPER_ADMIN", "STATE_ADMIN", "DISTRICT_ADMIN", "DATA_ENTRY_OPERATOR", "DISTRICT_OFFICER"]} fallback={<NotAccessible />}><Outlet /></RoleGuard>}>
+        <Route element={<RoleGuard roles={["SUPER_ADMIN", "STATE_ADMIN", "DISTRICT_ADMIN", "DATA_ENTRY_OPERATOR", "DISTRICT_OFFICER", "REVIEWER"]} fallback={<NotAccessible />}><Outlet /></RoleGuard>}>
           <Route path="/projects/:projectId/front-matter" element={<FrontMatterPage />} />
           <Route path="/projects/:projectId/chapters" element={<ChaptersPage />} />
           <Route path="/projects/:projectId/plates" element={<PlatesPage />} />
@@ -96,12 +98,12 @@ export default function AppRoutes() {
         <Route path="/projects/:projectId/preview" element={<ReportPreviewPage />} />
         <Route path="/projects/:projectId/generate" element={<RoleGuard roles={["SUPER_ADMIN", "STATE_ADMIN", "DISTRICT_ADMIN", "REPORT_GENERATOR"]} fallback={<NotAccessible />}><ReportPreviewPage /></RoleGuard>} />
         
-        <Route path="/projects/:projectId/reviewer" element={<RoleGuard roles={["SUPER_ADMIN", "STATE_ADMIN", "REVIEWER"]} fallback={<NotAccessible />}><ReviewerPage /></RoleGuard>} />
-        <Route path="/reviewer" element={<RoleGuard roles={["SUPER_ADMIN", "STATE_ADMIN", "REVIEWER"]} fallback={<NotAccessible />}><ReviewerPage /></RoleGuard>} />
+        <Route path="/projects/:projectId/reviewer" element={<RoleGuard roles={["SUPER_ADMIN", "STATE_ADMIN", "DISTRICT_ADMIN", "DISTRICT_OFFICER", "GEOLOGIST", "SURVEY_OFFICER", "REVIEWER", "DATA_ENTRY_OPERATOR", "REPORT_GENERATOR"]} fallback={<NotAccessible />}><ReviewerPage /></RoleGuard>} />
+        <Route path="/reviewer" element={<RoleGuard roles={["SUPER_ADMIN", "STATE_ADMIN", "DISTRICT_ADMIN", "REVIEWER"]} fallback={<NotAccessible />}><WorkflowLandingPage /></RoleGuard>} />
 
         <Route
           path="/workflow"
-          element={<RoleGuard roles={["SUPER_ADMIN", "STATE_ADMIN", "REVIEWER"]} fallback={<NotAccessible />}><ReviewerPage /></RoleGuard>}
+          element={<RoleGuard roles={["SUPER_ADMIN", "STATE_ADMIN", "DISTRICT_ADMIN", "REVIEWER"]} fallback={<NotAccessible />}><WorkflowLandingPage /></RoleGuard>}
         />
 
         <Route
@@ -121,7 +123,7 @@ export default function AppRoutes() {
 
         <Route
           path="/notifications"
-          element={<ModuleEditor storageKey="notifications" {...portalModules.notifications} />}
+          element={<NotificationsPage />}
         />
 
         <Route

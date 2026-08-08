@@ -22,9 +22,42 @@ export interface SignatureAuthority {
 }
 
 export interface ReviewerNote {
+  id: string;
   section: string;
+  sectionKey: string;
   note: string;
+  priority: "low" | "normal" | "high" | "critical";
+  status: "open" | "resolved";
+  createdAt: string;
   updatedAt: string;
+  resolvedAt?: string;
+  createdBy: WorkflowPerson;
+  recipients: WorkflowPerson[];
+  canUpdate?: boolean;
+}
+
+export interface WorkflowPerson {
+  id: number;
+  name: string;
+  role: string;
+  department?: string;
+}
+
+export interface ReviewEvent {
+  id: string;
+  type: "note_created" | "note_resolved" | "note_reopened" | "review_returned" | "review_approved";
+  message: string;
+  createdAt: string;
+  actor: WorkflowPerson;
+  noteId?: string;
+}
+
+export interface CreateReviewerNoteInput {
+  section: string;
+  sectionKey?: string;
+  note: string;
+  priority?: ReviewerNote["priority"];
+  recipientIds?: number[];
 }
 
 export type ReviewDecision = "approved" | "returned";
@@ -62,5 +95,8 @@ export interface WorkflowSummary {
   totalSteps: number;
   signatures: SignatureAuthority[];
   reviewerNotes: ReviewerNote[];
+  reviewEvents: ReviewEvent[];
+  canReview: boolean;
+  openNotes: number;
   lastUpdated: string;
 }

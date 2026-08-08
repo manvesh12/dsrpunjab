@@ -4,6 +4,8 @@ import type {
   ReviewerNote,
   ReviewSubmission,
   WorkflowSummary,
+  WorkflowPerson,
+  CreateReviewerNoteInput,
 } from "../types/workflow.types";
 
 const STORAGE_KEY_PREFIX = "dsr:workflow:";
@@ -62,6 +64,27 @@ function saveLocal(summary: WorkflowSummary) {
   localStorage.setItem(localKey(summary.projectId), JSON.stringify(summary));
 }
 
+function normalizeSummary(summary: WorkflowSummary): WorkflowSummary {
+  const reviewerNotes = (summary.reviewerNotes || []).map((note, index) => ({
+    ...note,
+    id: note.id || `${note.section}-${note.updatedAt || index}`,
+    sectionKey: note.sectionKey || note.section.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+    priority: note.priority || "normal",
+    status: note.status || "open",
+    createdAt: note.createdAt || note.updatedAt || new Date().toISOString(),
+    updatedAt: note.updatedAt || note.createdAt || new Date().toISOString(),
+    createdBy: note.createdBy || { id: 0, name: "Reviewer", role: "REVIEWER" },
+    recipients: note.recipients || [],
+  }));
+  return {
+    ...summary,
+    reviewerNotes,
+    reviewEvents: summary.reviewEvents || [],
+    canReview: summary.canReview ?? false,
+    openNotes: summary.openNotes ?? reviewerNotes.filter((note) => note.status === "open").length,
+  };
+}
+
 export async function getWorkflowSummary(
   projectId: string
 ): Promise<WorkflowSummary> {
@@ -69,15 +92,18 @@ export async function getWorkflowSummary(
     const res = await apiClient.get<WorkflowSummary>(
       `/projects/${projectId}/workflow`
     );
-    const summary = res.data;
+    const summary = normalizeSummary(res.data);
     saveLocal(summary);
     return summary;
-  } catch {
-    // fall through
+  } catch (error: unknown) {
+    const status = typeof error === "object" && error !== null && "response" in error
+      ? (error as { response?: { status?: number } }).response?.status
+      : undefined;
+    if (status && status < 500) throw error;
   }
 
   const local = loadLocal(projectId);
-  if (local) return local;
+  if (local) return normalizeSummary(local);
 
   const fresh: WorkflowSummary = {
     projectId,
@@ -88,6 +114,9 @@ export async function getWorkflowSummary(
     totalSteps: 8,
     signatures: defaultSignatures(),
     reviewerNotes: [],
+    reviewEvents: [],
+    canReview: false,
+    openNotes: 0,
     lastUpdated: new Date().toISOString(),
   };
   saveLocal(fresh);
@@ -127,46 +156,36 @@ export async function saveSignature(
 export async function saveReviewerNote(
   projectId: string,
   section: string,
-  note: string
-): Promise<void> {
-  const summary = await getWorkflowSummary(projectId);
-  const existing = summary.reviewerNotes.find((n) => n.section === section);
-  if (existing) {
-    existing.note = note;
-    existing.updatedAt = new Date().toISOString();
-  } else {
-    summary.reviewerNotes.push({
-      section,
-      note,
-      updatedAt: new Date().toISOString(),
-    });
-  }
-  summary.lastUpdated = new Date().toISOString();
-  saveLocal(summary);
+  note: string,
+  options: Omit<CreateReviewerNoteInput, "section" | "note"> = {}
+): Promise<ReviewerNote> {
+  const { data } = await apiClient.post<ReviewerNote>(`/projects/${projectId}/workflow/notes`, {
+    section,
+    note,
+    ...options,
+  });
+  return data;
+}
 
-  try {
-    await apiClient.put(`/projects/${projectId}/workflow/notes`, {
-      notes: summary.reviewerNotes,
-    });
-  } catch {
-    // silent
-  }
+export async function getReviewRecipients(projectId: string): Promise<WorkflowPerson[]> {
+  const { data } = await apiClient.get<WorkflowPerson[]>(`/projects/${projectId}/workflow/recipients`);
+  return data;
+}
+
+export async function setReviewerNoteStatus(
+  projectId: string,
+  noteId: string,
+  status: ReviewerNote["status"]
+): Promise<ReviewerNote> {
+  const { data } = await apiClient.patch<ReviewerNote>(`/projects/${projectId}/workflow/notes/${noteId}`, { status });
+  return data;
 }
 
 export async function submitReview(
   projectId: string,
   submission: ReviewSubmission
 ): Promise<void> {
-  const summary = await getWorkflowSummary(projectId);
-  summary.status = submission.decision === "approved" ? "approved" : "returned";
-  summary.lastUpdated = new Date().toISOString();
-  saveLocal(summary);
-
-  try {
-    await apiClient.post(`/projects/${projectId}/workflow/review`, submission);
-  } catch {
-    // silent
-  }
+  await apiClient.post(`/projects/${projectId}/workflow/review`, submission);
 }
 
 export type { SignatureAuthority, ReviewerNote };

@@ -15,6 +15,7 @@ import { dashboardRouter } from "./dashboard/dashboard.routes.js";
 import { healthRouter } from "./health/health.routes.js";
 import { modelDsrRouter } from "./model-dsr/model-dsr.routes.js";
 import { streamRouter } from "./notifications/progress-stream.routes.js";
+import { notificationsRouter } from "./notifications/notifications.routes.js";
 import { pdfRouter } from "./pdf/pdf.routes.js";
 import { projectsRouter } from "./projects/projects.routes.js";
 import { jobsRouter } from "./queue/jobs.routes.js";
@@ -62,6 +63,7 @@ export function createApp() {
   app.use("/api/model-dsrs", requireAuth, auditMutations, modelDsrRouter);
   app.use("/api/settings", settingsRouter);
   app.use("/api/search", requireAuth, auditMutations, searchRouter);
+  app.use("/api/notifications", requireAuth, auditMutations, notificationsRouter);
   app.use("/api/stream", requireAuth, streamRouter);
   app.use("/api", requireAuth, auditMutations, replenishmentRouter);
   app.use("/api", requireAuth, uploadLimiter, auditMutations, pdfRouter);

@@ -1,28 +1,20 @@
 import { useState } from "react";
-import { Outlet, useParams, useLocation } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import Header from "./Header";
 import Sidebar from "./Sidebar";
 import ReviewerFloatingPanel from "../ui/ReviewerFloatingPanel";
-import SectionReviewWidget from "../ui/SectionReviewWidget";
+import { useAuth } from "../../security/auth.context";
 
 export default function PortalLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const params = useParams();
   const location = useLocation();
+  const { user } = useAuth();
 
   // Show floating panels only when inside a project
-  const hasProject = !!params.projectId;
-
-  // Show the section review widget only on actual DSR section pages
-  // (not on project overview, not on reviewer page)
-  const sectionPaths = [
-    "front-matter", "chapters", "plates", "cross-sections",
-    "annexures", "replenishment", "model-dsr", "preview", "generate",
-  ];
-  const isOnSectionPage =
-    hasProject &&
-    sectionPaths.some((p) => location.pathname.includes(`/${p}`));
+  const projectId = location.pathname.match(/^\/projects\/([^/]+)/)?.[1];
+  const hasProject = Boolean(projectId);
+  const canReview = ["SUPER_ADMIN", "STATE_ADMIN", "DISTRICT_ADMIN", "REVIEWER"].includes(user?.role || "");
 
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 transition-colors">
@@ -42,10 +34,8 @@ export default function PortalLayout() {
       </div>
 
       {/* Bottom-right: Send review / notification panel (all project pages) */}
-      {hasProject && <ReviewerFloatingPanel />}
+      {hasProject && canReview && projectId && <ReviewerFloatingPanel projectId={projectId} />}
 
-      {/* Bottom-left: Context-aware section review widget (on DSR section pages only) */}
-      {isOnSectionPage && <SectionReviewWidget />}
     </div>
   );
 }

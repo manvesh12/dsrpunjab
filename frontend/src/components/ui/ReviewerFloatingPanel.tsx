@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import {
   MessageSquarePlus,
   X,
@@ -18,7 +18,12 @@ import {
   Check,
 } from "lucide-react";
 import { toast } from "sonner";
-import { saveReviewerNote } from "../../api/workflow.api";
+import {
+  getReviewRecipients,
+  getWorkflowSummary,
+  saveReviewerNote,
+} from "../../api/workflow.api";
+import type { ReviewerNote, WorkflowPerson } from "../../types/workflow.types";
 
 // ─────────────────────────────────────────────────────────
 // Constants
@@ -34,69 +39,38 @@ const DSR_SECTIONS = [
   { id: "model-dsr",      label: "Model DSR",              icon: FileCheck2,         desc: "Compiled model DSR report" },
 ];
 
-const RECIPIENTS = [
-  { id: "sdo",        name: "Sub-Divisional Officer",   role: "SDO",           dept: "Geology & Mining" },
-  { id: "axen",       name: "Executive Engineer",       role: "AXEN",          dept: "Geology & Mining" },
-  { id: "reviewer1",  name: "Reviewer – Level 1",       role: "Reviewer",      dept: "State Pollution Board" },
-  { id: "reviewer2",  name: "Reviewer – Level 2",       role: "Sr. Reviewer",  dept: "Mining Department" },
-  { id: "dc",         name: "District Coordinator",     role: "Coordinator",   dept: "District Administration" },
-  { id: "admin",      name: "Portal Administrator",     role: "Admin",         dept: "DSR Portal Team" },
-];
+function apiErrorMessage(error: unknown, fallback: string) {
+  if (typeof error !== "object" || error === null || !("response" in error)) return fallback;
+  return (error as { response?: { data?: { message?: string } } }).response?.data?.message || fallback;
+}
 
 // ─────────────────────────────────────────────────────────
 // Review notification stored type
 // ─────────────────────────────────────────────────────────
-interface ReviewNotification {
-  id: string;
-  projectId: string;
-  sectionId: string;
-  sectionLabel: string;
-  note: string;
-  recipientId: string;
-  recipientName: string;
-  sentAt: string;
-  read: boolean;
-}
-
-function notifStorageKey(projectId: string) {
-  return `dsr:review-notifs:${projectId}`;
-}
-
-function loadNotifications(projectId: string): ReviewNotification[] {
-  try {
-    return JSON.parse(localStorage.getItem(notifStorageKey(projectId)) || "[]");
-  } catch { return []; }
-}
-
-function saveNotifications(projectId: string, notifs: ReviewNotification[]) {
-  localStorage.setItem(notifStorageKey(projectId), JSON.stringify(notifs));
-}
-
 // ─────────────────────────────────────────────────────────
 // Floating Reviewer Panel
 // ─────────────────────────────────────────────────────────
-export default function ReviewerFloatingPanel() {
-  const { projectId = "1" } = useParams();
+export default function ReviewerFloatingPanel({ projectId }: { projectId: string }) {
+  const location = useLocation();
 
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<"select" | "write" | "send" | "done">("select");
 
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
   const [reviewText, setReviewText] = useState("");
-  const [selectedRecipients, setSelectedRecipients] = useState<string[]>([]);
+  const [priority, setPriority] = useState<ReviewerNote["priority"]>("normal");
+  const [recipients, setRecipients] = useState<WorkflowPerson[]>([]);
+  const [selectedRecipients, setSelectedRecipients] = useState<number[]>([]);
+  const [recentNotes, setRecentNotes] = useState<ReviewerNote[]>([]);
+  const [openNoteCount, setOpenNoteCount] = useState(0);
+  const [loadingRecipients, setLoadingRecipients] = useState(false);
   const [sending, setSending] = useState(false);
-
-  const [notifs, setNotifs] = useState<ReviewNotification[]>(() =>
-    loadNotifications(projectId)
-  );
-  const [showNotifBadge, setShowNotifBadge] = useState(() =>
-    loadNotifications(projectId).some((notification) => !notification.read)
-  );
 
   const resetPanel = () => {
     setStep("select");
     setSelectedSection(null);
     setReviewText("");
+    setPriority("normal");
     setSelectedRecipients([]);
   };
 
@@ -105,17 +79,35 @@ export default function ReviewerFloatingPanel() {
     resetPanel();
   };
 
-  const togglePanel = () => {
+  const togglePanel = async () => {
     if (!open) {
-      const loaded = loadNotifications(projectId);
-      setNotifs(loaded);
-      setShowNotifBadge(loaded.some((notification) => !notification.read));
       resetPanel();
+      const contextualSection = location.pathname.includes("/annexures/additional/")
+        ? DSR_SECTIONS.find((section) => section.id === "annexures-btok")
+        : DSR_SECTIONS.find((section) => location.pathname.includes(`/${section.id}`));
+      if (contextualSection) {
+        setSelectedSection(contextualSection.id);
+        setStep("write");
+      }
+      setLoadingRecipients(true);
+      try {
+        const [availableRecipients, summary] = await Promise.all([
+          getReviewRecipients(projectId),
+          getWorkflowSummary(projectId),
+        ]);
+        setRecipients(availableRecipients);
+        setRecentNotes(summary.reviewerNotes);
+        setOpenNoteCount(summary.openNotes);
+      } catch {
+        toast.error("Could not load the reviewer workflow. Please try again.");
+      } finally {
+        setLoadingRecipients(false);
+      }
     }
     setOpen((previous) => !previous);
   };
 
-  const toggleRecipient = (id: string) => {
+  const toggleRecipient = (id: number) => {
     setSelectedRecipients((prev) =>
       prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]
     );
@@ -130,33 +122,18 @@ export default function ReviewerFloatingPanel() {
     try {
       const section = DSR_SECTIONS.find((s) => s.id === selectedSection)!;
 
-      // Save reviewer note to workflow state
-      await saveReviewerNote(projectId, section.label, reviewText);
-
-      // Create notifications for each recipient
-      const newNotifs: ReviewNotification[] = selectedRecipients.map((rId) => {
-        const recipient = RECIPIENTS.find((r) => r.id === rId)!;
-        return {
-          id: `${Date.now()}-${rId}`,
-          projectId,
-          sectionId: selectedSection,
-          sectionLabel: section.label,
-          note: reviewText,
-          recipientId: rId,
-          recipientName: recipient.name,
-          sentAt: new Date().toISOString(),
-          read: false,
-        };
+      const savedNote = await saveReviewerNote(projectId, section.label, reviewText, {
+        sectionKey: section.id,
+        priority,
+        recipientIds: selectedRecipients,
       });
-
-      const existing = loadNotifications(projectId);
-      const updated = [...newNotifs, ...existing];
-      saveNotifications(projectId, updated);
-      setNotifs(updated);
-      setShowNotifBadge(true);
+      setRecentNotes((current) => [savedNote, ...current]);
+      setOpenNoteCount((current) => current + 1);
 
       setStep("done");
       toast.success(`Review sent to ${selectedRecipients.length} recipient(s)!`);
+    } catch (error: unknown) {
+      toast.error(apiErrorMessage(error, "Review could not be sent."));
     } finally {
       setSending(false);
     }
@@ -169,9 +146,9 @@ export default function ReviewerFloatingPanel() {
       {/* ── Floating Trigger Button ── */}
       <div className="fixed bottom-24 right-4 z-50 flex flex-col items-end gap-3 sm:right-6">
         {/* Notification badge bubble */}
-        {showNotifBadge && !open && (
+        {openNoteCount > 0 && !open && (
           <div className="animate-bounce rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700 shadow-md">
-            📋 Review notifications pending
+            {openNoteCount} open review {openNoteCount === 1 ? "note" : "notes"}
           </div>
         )}
 
@@ -190,9 +167,9 @@ export default function ReviewerFloatingPanel() {
           <span className="text-sm font-semibold">
             {open ? "Close Notes" : "Reviewer Notes"}
           </span>
-          {showNotifBadge && !open && (
+          {openNoteCount > 0 && !open && (
             <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">
-              {notifs.filter((n) => !n.read).length}
+              {openNoteCount > 9 ? "9+" : openNoteCount}
             </span>
           )}
         </button>
@@ -300,6 +277,20 @@ export default function ReviewerFloatingPanel() {
                   {reviewText.length} characters
                 </div>
 
+                <label className="mt-3 mb-1.5 block text-xs font-bold uppercase text-slate-500">
+                  Priority
+                </label>
+                <select
+                  value={priority}
+                  onChange={(event) => setPriority(event.target.value as ReviewerNote["priority"])}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="low">Low</option>
+                  <option value="normal">Normal</option>
+                  <option value="high">High</option>
+                  <option value="critical">Critical</option>
+                </select>
+
                 <button
                   disabled={!reviewText.trim()}
                   onClick={() => setStep("send")}
@@ -326,7 +317,17 @@ export default function ReviewerFloatingPanel() {
                   Send review to:
                 </label>
                 <div className="space-y-1.5">
-                  {RECIPIENTS.map((rec) => {
+                  {loadingRecipients && (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-center text-xs text-slate-500">
+                      Loading project team…
+                    </div>
+                  )}
+                  {!loadingRecipients && recipients.length === 0 && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-center text-xs text-amber-700">
+                      No eligible recipients are assigned to this district.
+                    </div>
+                  )}
+                  {recipients.map((rec) => {
                     const selected = selectedRecipients.includes(rec.id);
                     return (
                       <button
@@ -348,7 +349,7 @@ export default function ReviewerFloatingPanel() {
                         <div className="min-w-0 flex-1">
                           <div className="text-sm font-semibold text-slate-800">{rec.name}</div>
                           <div className="text-[10px] text-slate-400">
-                            {rec.role} · {rec.dept}
+                            {rec.role} · {rec.department || "District DSR Team"}
                           </div>
                         </div>
                         <div
@@ -364,7 +365,7 @@ export default function ReviewerFloatingPanel() {
                 {/* Select all / none */}
                 <div className="mt-2 flex gap-2">
                   <button
-                    onClick={() => setSelectedRecipients(RECIPIENTS.map((r) => r.id))}
+                    onClick={() => setSelectedRecipients(recipients.map((recipient) => recipient.id))}
                     className="flex-1 rounded-lg border border-slate-200 py-1.5 text-[10px] font-semibold text-slate-500 hover:bg-slate-50"
                   >
                     Select All
@@ -405,7 +406,8 @@ export default function ReviewerFloatingPanel() {
                 {/* Recipients list */}
                 <div className="mt-4 w-full space-y-1.5">
                   {selectedRecipients.map((rId) => {
-                    const rec = RECIPIENTS.find((r) => r.id === rId)!;
+                    const rec = recipients.find((recipient) => recipient.id === rId);
+                    if (!rec) return null;
                     return (
                       <div
                         key={rId}
@@ -437,42 +439,29 @@ export default function ReviewerFloatingPanel() {
             )}
           </div>
 
-          {/* Notifications list at bottom */}
-          {step === "select" && notifs.length > 0 && (
+          {/* Recent project review notes */}
+          {step === "select" && recentNotes.length > 0 && (
             <div className="border-t border-slate-100 bg-slate-50 px-4 py-3">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-[10px] font-bold uppercase text-slate-400">
-                  Recent Review Notifications
-                </span>
-                <button
-                  onClick={() => {
-                    const updated = notifs.map((n) => ({ ...n, read: true }));
-                    saveNotifications(projectId, updated);
-                    setNotifs(updated);
-                    setShowNotifBadge(false);
-                  }}
-                  className="text-[10px] text-blue-600 hover:underline"
-                >
-                  Mark all read
-                </button>
-              </div>
+              <span className="mb-2 block text-[10px] font-bold uppercase text-slate-400">
+                Recent Project Review Notes
+              </span>
               <div className="max-h-36 space-y-1.5 overflow-y-auto">
-                {notifs.slice(0, 5).map((n) => (
+                {recentNotes.slice(0, 5).map((note) => (
                   <div
-                    key={n.id}
+                    key={note.id}
                     className={`rounded-lg border px-3 py-2 text-xs ${
-                      n.read
-                        ? "border-slate-200 bg-white text-slate-500"
-                        : "border-blue-200 bg-blue-50 text-blue-700"
+                      note.status === "resolved"
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : "border-amber-200 bg-amber-50 text-amber-800"
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold">{n.sectionLabel}</span>
-                      <span className="shrink-0 text-[9px] opacity-60">
-                        → {n.recipientName.split(" ")[0]}
+                      <span className="font-semibold">{note.section}</span>
+                      <span className="shrink-0 text-[9px] font-bold uppercase opacity-70">
+                        {note.status}
                       </span>
                     </div>
-                    <p className="mt-0.5 line-clamp-1 text-[10px] opacity-75">{n.note}</p>
+                    <p className="mt-0.5 line-clamp-1 text-[10px] opacity-75">{note.note}</p>
                   </div>
                 ))}
               </div>

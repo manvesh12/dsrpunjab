@@ -1,5 +1,11 @@
 import { apiClient } from "./client";
 
+function isNotFound(error: unknown) {
+  return typeof error === "object" && error !== null &&
+    "response" in error &&
+    (error as { response?: { status?: number } }).response?.status === 404;
+}
+
 /**
  * NOTE: The backend currently has a progress-stream service for SSE notifications.
  * A full Notification entity on the User model exists in the Prisma schema.
@@ -14,6 +20,7 @@ export interface Notification {
   read: boolean;
   createdAt: string;
   link?: string;
+  category?: string;
 }
 
 export const notificationsApi = {
@@ -22,8 +29,8 @@ export const notificationsApi = {
     try {
       const { data } = await apiClient.get<Notification[]>("/notifications");
       return data;
-    } catch (err: any) {
-      if (err?.response?.status === 404) return [];
+    } catch (err: unknown) {
+      if (isNotFound(err)) return [];
       throw err;
     }
   },
@@ -32,8 +39,8 @@ export const notificationsApi = {
   markRead: async (id: string | number): Promise<void> => {
     try {
       await apiClient.patch(`/notifications/${id}/read`);
-    } catch (err: any) {
-      if (err?.response?.status === 404) return;
+    } catch (err: unknown) {
+      if (isNotFound(err)) return;
       throw err;
     }
   },
@@ -42,10 +49,15 @@ export const notificationsApi = {
   markAllRead: async (): Promise<void> => {
     try {
       await apiClient.patch("/notifications/read-all");
-    } catch (err: any) {
-      if (err?.response?.status === 404) return;
+    } catch (err: unknown) {
+      if (isNotFound(err)) return;
       throw err;
     }
+  },
+
+  /** Delete one notification owned by the current user */
+  remove: async (id: string | number): Promise<void> => {
+    await apiClient.delete(`/notifications/${id}`);
   },
 
   /**

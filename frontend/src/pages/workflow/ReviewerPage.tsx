@@ -5,14 +5,12 @@ import {
   Circle,
   Lock,
   CheckCheck,
-  Send,
   MessageSquareText,
   AlertTriangle,
   ChevronRight,
   FileCheck,
   ClipboardList,
   ShieldCheck,
-  Download,
   Bell,
   BellRing,
   Inbox,
@@ -25,8 +23,10 @@ import PageHeader from "../../components/layout/PageHeader";
 import {
   getWorkflowSummary,
   saveReviewerNote,
+  setReviewerNoteStatus,
   submitReview,
 } from "../../api/workflow.api";
+import { notificationsApi } from "../../api/notifications.api";
 import type {
   WorkflowSummary,
   ReviewerNote,
@@ -58,32 +58,21 @@ const DSR_SECTIONS = [
   "Model DSR",
 ];
 
+function apiErrorMessage(error: unknown, fallback: string) {
+  if (typeof error !== "object" || error === null || !("response" in error)) return fallback;
+  return (error as { response?: { data?: { message?: string } } }).response?.data?.message || fallback;
+}
+
 // ─────────────────────────────────────────────────────────
 // Notification type (mirrors ReviewerFloatingPanel)
 // ─────────────────────────────────────────────────────────
 interface ReviewNotification {
-  id: string;
-  projectId: string;
-  sectionId: string;
+  id: string | number;
   sectionLabel: string;
   note: string;
-  recipientId: string;
   recipientName: string;
   sentAt: string;
   read: boolean;
-}
-
-function notifKey(projectId: string) {
-  return `dsr:review-notifs:${projectId}`;
-}
-
-function loadNotifs(projectId: string): ReviewNotification[] {
-  try { return JSON.parse(localStorage.getItem(notifKey(projectId)) || "[]"); }
-  catch { return []; }
-}
-
-function saveNotifs(projectId: string, notifs: ReviewNotification[]) {
-  localStorage.setItem(notifKey(projectId), JSON.stringify(notifs));
 }
 
 // ─────────────────────────────────────────────────────────
@@ -106,27 +95,48 @@ export default function ReviewerPage() {
   const [noteSection, setNoteSection] = useState(DSR_SECTIONS[0]);
   const [noteText, setNoteText] = useState("");
 
+  const fetchWorkflow = useCallback(async () => {
+    const [data, notifications] = await Promise.all([
+      getWorkflowSummary(projectId),
+      notificationsApi.list(),
+    ]);
+    return {
+      data,
+      notifications: notifications
+        .filter((notification) => projectId === "default" || notification.link?.includes(`/projects/${projectId}/`))
+        .map((notification) => ({
+          id: notification.id,
+          sectionLabel: (notification.category || "Review Update").replaceAll("_", " "),
+          note: notification.message,
+          recipientName: "DSR Workflow",
+          sentAt: notification.createdAt,
+          read: notification.read,
+        })),
+    };
+  }, [projectId]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getWorkflowSummary(projectId);
-      setSummary(data);
+      const result = await fetchWorkflow();
+      setSummary(result.data);
+      setNotifs(result.notifications);
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
-
-  useEffect(() => { load(); }, [load]);
+  }, [fetchWorkflow]);
 
   useEffect(() => {
-    setNotifs(loadNotifs(projectId));
-  }, [projectId]);
-
-  // Sync note text when section changes
-  useEffect(() => {
-    const existing = summary?.reviewerNotes.find((n) => n.section === noteSection);
-    setNoteText(existing?.note || "");
-  }, [noteSection, summary]);
+    let active = true;
+    fetchWorkflow()
+      .then((result) => {
+        if (!active) return;
+        setSummary(result.data);
+        setNotifs(result.notifications);
+      })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [fetchWorkflow]);
 
   // ── Build checklist ──
   const buildChecklist = (): ChecklistItem[] => {
@@ -161,44 +171,66 @@ export default function ReviewerPage() {
   };
 
   const handleReviewDecision = async (decision: "approved" | "returned") => {
-    await submitReview(projectId, {
-      decision,
-      aggregatedNotes,
-      submittedAt: new Date().toISOString(),
-      submittedBy: "Reviewer",
-    });
-    setSummary((prev) =>
-      prev ? { ...prev, status: decision === "approved" ? "approved" : "returned" } : prev
-    );
-    setReviewModalOpen(false);
-    toast.success(decision === "approved" ? "Project approved!" : "Project returned for corrections.");
+    try {
+      await submitReview(projectId, {
+        decision,
+        aggregatedNotes,
+        submittedAt: new Date().toISOString(),
+        submittedBy: "Reviewer",
+      });
+      await load();
+      setReviewModalOpen(false);
+      toast.success(decision === "approved" ? "Project approved!" : "Project returned for corrections.");
+    } catch (error: unknown) {
+      toast.error(apiErrorMessage(error, "Review decision could not be submitted."));
+    }
   };
 
   const handleSaveNote = async () => {
     if (!noteText.trim()) return;
-    await saveReviewerNote(projectId, noteSection, noteText);
-    setSummary((prev) => {
-      if (!prev) return prev;
-      const exists = prev.reviewerNotes.find((n) => n.section === noteSection);
-      const updated = exists
-        ? prev.reviewerNotes.map((n) => n.section === noteSection ? { ...n, note: noteText, updatedAt: new Date().toISOString() } : n)
-        : [...prev.reviewerNotes, { section: noteSection, note: noteText, updatedAt: new Date().toISOString() }];
-      return { ...prev, reviewerNotes: updated };
-    });
-    toast.success("Note saved");
+    try {
+      const saved = await saveReviewerNote(projectId, noteSection, noteText);
+      setSummary((previous) => previous ? {
+        ...previous,
+        reviewerNotes: [saved, ...previous.reviewerNotes],
+        openNotes: previous.openNotes + 1,
+      } : previous);
+      setNoteText("");
+      toast.success("Review note sent to the project team.");
+    } catch (error: unknown) {
+      toast.error(apiErrorMessage(error, "Review note could not be saved."));
+    }
   };
 
-  const markAllRead = () => {
-    const updated = notifs.map((n) => ({ ...n, read: true }));
-    saveNotifs(projectId, updated);
-    setNotifs(updated);
+  const markAllRead = async () => {
+    await notificationsApi.markAllRead();
+    setNotifs((current) => current.map((notification) => ({ ...notification, read: true })));
     toast.success("All notifications marked as read");
   };
 
-  const deleteNotif = (id: string) => {
-    const updated = notifs.filter((n) => n.id !== id);
-    saveNotifs(projectId, updated);
-    setNotifs(updated);
+  const deleteNotif = async (id: string | number) => {
+    await notificationsApi.remove(id);
+    setNotifs((current) => current.filter((notification) => notification.id !== id));
+  };
+
+  const updateNoteStatus = async (note: ReviewerNote) => {
+    try {
+      const updated = await setReviewerNoteStatus(
+        projectId,
+        note.id,
+        note.status === "open" ? "resolved" : "open"
+      );
+      setSummary((previous) => previous ? {
+        ...previous,
+        reviewerNotes: previous.reviewerNotes.map((entry) => entry.id === updated.id ? updated : entry),
+        openNotes: previous.reviewerNotes.filter((entry) =>
+          entry.id === updated.id ? updated.status === "open" : entry.status === "open"
+        ).length,
+      } : previous);
+      toast.success(updated.status === "resolved" ? "Review note resolved." : "Review note reopened.");
+    } catch (error: unknown) {
+      toast.error(apiErrorMessage(error, "Review note status could not be updated."));
+    }
   };
 
   if (loading) {
@@ -227,7 +259,7 @@ export default function ReviewerPage() {
     { id: "workflow",      label: "Workflow",       icon: <ClipboardList size={15} /> },
     { id: "notes",         label: "Review Notes",   icon: <MessageSquareText size={15} /> },
     { id: "notifications", label: "Notifications",  icon: <Bell size={15} />, badge: unreadCount },
-    { id: "review",        label: "Approve/Return", icon: <ShieldCheck size={15} /> },
+    { id: "review",        label: summary?.canReview ? "Approve/Return" : "Resolution Status", icon: <ShieldCheck size={15} /> },
   ];
 
   return (
@@ -346,7 +378,7 @@ export default function ReviewerPage() {
                 return (
                   <button
                     key={section}
-                    onClick={() => setNoteSection(section)}
+                    onClick={() => { setNoteSection(section); setNoteText(""); }}
                     className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${noteSection === section ? "bg-blue-50" : "hover:bg-slate-50"}`}
                   >
                     <div className={`h-2 w-2 shrink-0 rounded-full ${hasNote ? "bg-amber-400" : "bg-slate-200"}`} />
@@ -367,7 +399,9 @@ export default function ReviewerPage() {
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <div>
                 <h3 className="font-bold text-slate-800">{noteSection}</h3>
-                <p className="mt-0.5 text-xs text-slate-400">Write review feedback for this section</p>
+                <p className="mt-0.5 text-xs text-slate-400">
+                  {summary?.canReview ? "Write review feedback for this section" : "Review feedback assigned to the project team"}
+                </p>
               </div>
               {summary?.reviewerNotes.find((n) => n.section === noteSection)?.updatedAt && (
                 <span className="text-[10px] text-slate-400">
@@ -375,7 +409,7 @@ export default function ReviewerPage() {
                 </span>
               )}
             </div>
-            <div className="p-5">
+            {summary?.canReview && <div className="p-5">
               <textarea
                 key={noteSection}
                 value={noteText}
@@ -402,7 +436,7 @@ export default function ReviewerPage() {
                   </button>
                 </div>
               </div>
-            </div>
+            </div>}
 
             {/* All saved notes summary */}
             {summary?.reviewerNotes.filter((n) => n.note.trim()).length ? (
@@ -410,12 +444,26 @@ export default function ReviewerPage() {
                 <h4 className="mb-3 text-xs font-bold uppercase text-slate-400">All Saved Notes</h4>
                 <div className="space-y-2">
                   {summary.reviewerNotes.filter((n) => n.note.trim()).map((n) => (
-                    <div key={n.section} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div key={n.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                       <div className="mb-1 flex items-center gap-2">
                         <FileText size={12} className="text-slate-400" />
                         <span className="text-xs font-bold text-slate-600">{n.section}</span>
+                        <span className={`ml-auto rounded-full px-2 py-0.5 text-[9px] font-bold uppercase ${n.status === "resolved" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                          {n.status}
+                        </span>
                       </div>
                       <p className="line-clamp-2 text-xs text-slate-500">{n.note}</p>
+                      <div className="mt-2 flex items-center justify-between">
+                        <span className="text-[10px] text-slate-400">
+                          {n.createdBy?.name || "Reviewer"} · {n.priority || "normal"} priority
+                        </span>
+                        {n.canUpdate && <button
+                          onClick={() => updateNoteStatus(n)}
+                          className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-50"
+                        >
+                          {n.status === "open" ? "Mark resolved" : "Reopen"}
+                        </button>}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -483,10 +531,11 @@ export default function ReviewerPage() {
                   <div className="flex shrink-0 flex-col gap-1.5">
                     {!n.read && (
                       <button
-                        onClick={() => {
-                          const updated = notifs.map((notif) => notif.id === n.id ? { ...notif, read: true } : notif);
-                          saveNotifs(projectId, updated);
-                          setNotifs(updated);
+                        onClick={async () => {
+                          await notificationsApi.markRead(n.id);
+                          setNotifs((current) => current.map((notification) =>
+                            notification.id === n.id ? { ...notification, read: true } : notification
+                          ));
                         }}
                         className="rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-100"
                       >
@@ -548,9 +597,11 @@ export default function ReviewerPage() {
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h3 className="mb-2 font-extrabold text-slate-800">Review Actions</h3>
             <p className="mb-5 text-sm text-slate-500">
-              Once you have reviewed all sections and added notes, return the project for corrections or approve it.
+              {summary?.canReview
+                ? "Resolve all observations, then return the project for corrections or approve it."
+                : "Address the observations assigned to you and mark each completed item as resolved."}
             </p>
-            <div className="flex flex-wrap gap-3">
+            {summary?.canReview ? <div className="flex flex-wrap gap-3">
               <button
                 onClick={openReviewModal}
                 className="flex items-center gap-2 rounded-xl bg-red-500 px-5 py-2.5 text-sm font-bold text-white hover:bg-red-600"
@@ -563,13 +614,11 @@ export default function ReviewerPage() {
               >
                 <CheckCheck size={15} /> Approve Report
               </button>
-              <button className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-5 py-2.5 text-sm font-bold text-blue-700 hover:bg-blue-100">
-                <Send size={15} /> Submit to Authority
-              </button>
-              <button className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-50">
-                <Download size={15} /> Download Review Report
-              </button>
-            </div>
+            </div> : (
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-700">
+                Open notes: <strong>{summary?.openNotes || 0}</strong>. Use the Review Notes tab to update their status.
+              </div>
+            )}
           </div>
 
           {/* Review notes summary */}
@@ -580,9 +629,12 @@ export default function ReviewerPage() {
               </div>
               <div className="divide-y">
                 {summary!.reviewerNotes.filter((n) => n.note.trim()).map((n: ReviewerNote) => (
-                  <div key={n.section} className="px-5 py-4">
+                  <div key={n.id} className="px-5 py-4">
                     <div className="mb-1 flex items-center gap-2 text-xs font-bold text-slate-500">
                       <FileText size={12} /> {n.section}
+                      <span className={`ml-auto rounded-full px-2 py-0.5 text-[9px] uppercase ${n.status === "resolved" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                        {n.status}
+                      </span>
                     </div>
                     <p className="text-sm text-slate-700">{n.note}</p>
                   </div>
