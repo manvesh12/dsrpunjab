@@ -4,7 +4,7 @@ Organized final webstack. The repository root intentionally contains only two ap
 
 ## Structure
 
-- `frontend` - Next.js web app
+- `frontend` - React, TypeScript and Vite web app
 - `frontend/public/legacy` - current working portal
 - `frontend/scripts/maintenance` - frontend maintenance scripts for legacy UI assets
 - `backend` - Express API backend, Prisma schema, worker, deployment notes and operations scripts
