@@ -31,6 +31,7 @@ async function main() {
   const distLdh = await prisma.district.create({ data: { name: 'Ludhiana', code: 'LDH', stateId: state.id } });
   const distAmr = await prisma.district.create({ data: { name: 'Amritsar', code: 'AMR', stateId: state.id } });
   const distMhl = await prisma.district.create({ data: { name: 'SAS Nagar', code: 'SAS', stateId: state.id } });
+  const distRpr = await prisma.district.create({ data: { name: 'Rupnagar', code: 'RPR', stateId: state.id } });
 
   // Create Modules and Permissions
   console.log('Creating Modules & Permissions...');
@@ -225,9 +226,20 @@ async function main() {
     { username: 'deo1.mhl', name: 'DEO One MHL', email: 'deo1.mhl@punjab.gov.in', role: 'DATA_ENTRY_OPERATOR', dist: distMhl.id },
     { username: 'deo2.mhl', name: 'DEO Two MHL', email: 'deo2.mhl@punjab.gov.in', role: 'DATA_ENTRY_OPERATOR', dist: distMhl.id },
     { username: 'reportgen.mhl', name: 'Report Gen MHL', email: 'report.mhl@punjab.gov.in', role: 'REPORT_GENERATOR', dist: distMhl.id },
+
+    // Rupnagar government authorities
+    { username: 'admin.rpr', name: 'District Admin Rupnagar', email: 'admin.rpr@punjab.gov.in', role: 'DISTRICT_ADMIN', dist: distRpr.id },
+    { username: 'officer1.rpr', name: 'District Officer One Rupnagar', email: 'officer1.rpr@punjab.gov.in', role: 'DISTRICT_OFFICER', dist: distRpr.id },
+    { username: 'officer2.rpr', name: 'District Officer Two Rupnagar', email: 'officer2.rpr@punjab.gov.in', role: 'DISTRICT_OFFICER', dist: distRpr.id },
+    { username: 'geologist.rpr', name: 'Geologist Rupnagar', email: 'geo.rpr@punjab.gov.in', role: 'GEOLOGIST', dist: distRpr.id },
+    { username: 'surveyor.rpr', name: 'Survey Officer Rupnagar', email: 'survey.rpr@punjab.gov.in', role: 'SURVEY_OFFICER', dist: distRpr.id },
+    { username: 'reviewer.rpr', name: 'Government Reviewer Rupnagar', email: 'review.rpr@punjab.gov.in', role: 'REVIEWER', dist: distRpr.id },
+    { username: 'deo1.rpr', name: 'Data Entry Operator One Rupnagar', email: 'deo1.rpr@punjab.gov.in', role: 'DATA_ENTRY_OPERATOR', dist: distRpr.id },
+    { username: 'deo2.rpr', name: 'Data Entry Operator Two Rupnagar', email: 'deo2.rpr@punjab.gov.in', role: 'DATA_ENTRY_OPERATOR', dist: distRpr.id },
+    { username: 'reportgen.rpr', name: 'Report Generator Rupnagar', email: 'report.rpr@punjab.gov.in', role: 'REPORT_GENERATOR', dist: distRpr.id },
   ];
 
-  console.log('Seeding 36 Users...');
+  console.log(`Seeding ${usersToCreate.length} Users...`);
   const createdUsers: any[] = [];
   for (const u of usersToCreate) {
     const created = await prisma.user.create({
@@ -248,7 +260,8 @@ async function main() {
   const districtConfigs = [
     { district: distLdh, prefix: "LDH", idStart: 1000 },
     { district: distAmr, prefix: "AMR", idStart: 2000 },
-    { district: distMhl, prefix: "MHL", idStart: 3000 }
+    { district: distMhl, prefix: "MHL", idStart: 3000 },
+    { district: distRpr, prefix: "RPR", idStart: 4000 }
   ];
 
   console.log("Seeding Projects...");

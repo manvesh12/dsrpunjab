@@ -1,17 +1,16 @@
 import { useState } from "react";
-import { ArrowRight, Lock, User, ShieldCheck, Home, FileCheck2, UsersRound, ScanSearch, Eye } from "lucide-react";
+import { isAxiosError } from "axios";
+import { ArrowRight, Lock, User, Home, FileCheck2, UsersRound, ScanSearch } from "lucide-react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { toast } from "sonner";
 import { useAuth } from "../../security/auth.context";
 import { authApi } from "../../api/auth.api";
+import GovernmentAuthorityLoginForm from "./GovernmentAuthorityLoginForm";
 
 export default function LoginPage() {
   const [activeTab, setActiveTab] = useState<"staff" | "authority">("staff");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [nicId, setNicId] = useState("");
-  const [pin, setPin] = useState("");
-  const [showPin, setShowPin] = useState(false);
   
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
@@ -20,13 +19,9 @@ export default function LoginPage() {
 
   const [error, setError] = useState<string | null>(null);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const authenticate = async (identifier: string, credential: string) => {
     setIsLoading(true);
     setError(null);
-    
-    const identifier = activeTab === "staff" ? email.trim() : nicId.trim();
-    const credential = activeTab === "staff" ? password : pin;
 
     try {
       const data = await authApi.login({ username: identifier, password: credential });
@@ -34,15 +29,25 @@ export default function LoginPage() {
       toast.success(`Welcome back, ${data.fullName || data.username}!`);
       const from = location.state?.from?.pathname || "/dashboard";
       navigate(from, { replace: true });
-    } catch (err: any) {
-      const msg =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        "Invalid username or password. Please try again.";
+    } catch (err: unknown) {
+      const responseData = isAxiosError<{ message?: string; error?: string }>(err)
+        ? err.response?.data
+        : undefined;
+      const msg = responseData?.message || responseData?.error || "Invalid username or password. Please try again.";
       setError(msg);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    void authenticate(email.trim(), password);
+  };
+
+  const switchTab = (tab: "staff" | "authority") => {
+    setActiveTab(tab);
+    setError(null);
   };
 
   return (
@@ -108,7 +113,7 @@ export default function LoginPage() {
       </div>
 
       {/* Right Panel - Login Form */}
-      <div className="w-full lg:w-[50%] flex items-center justify-center p-8 bg-slate-50 dark:bg-slate-950 relative transition-colors">
+      <div className="w-full lg:w-[50%] flex items-start xl:items-center justify-center overflow-y-auto p-8 py-12 bg-slate-50 dark:bg-slate-950 relative transition-colors">
         <div className="absolute inset-0 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] dark:bg-[radial-gradient(#334155_1px,transparent_1px)] [background-size:20px_20px] opacity-50"></div>
         
         <div className="w-full max-w-md relative z-10 animate-[fadeInUp_0.6s_ease-out_forwards]">
@@ -123,7 +128,7 @@ export default function LoginPage() {
             {/* Tabs */}
             <div className="flex bg-slate-100 dark:bg-slate-950/50 p-2 gap-2 border-b border-slate-200 dark:border-slate-800 transition-colors">
               <button 
-                onClick={() => setActiveTab("staff")}
+                onClick={() => switchTab("staff")}
                 className={`flex-1 py-3 px-4 rounded-2xl text-sm font-bold transition-all duration-200 ${
                   activeTab === "staff" 
                     ? "bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-400 shadow-sm border border-slate-200 dark:border-slate-700" 
@@ -133,7 +138,7 @@ export default function LoginPage() {
                 Faculty / Staff
               </button>
               <button 
-                onClick={() => setActiveTab("authority")}
+                onClick={() => switchTab("authority")}
                 className={`flex-1 py-3 px-4 rounded-2xl text-sm font-bold transition-all duration-200 ${
                   activeTab === "authority" 
                     ? "bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-400 shadow-sm border border-slate-200 dark:border-slate-700" 
@@ -205,64 +210,12 @@ export default function LoginPage() {
                   </button>
                 </form>
               ) : (
-                <form onSubmit={handleLogin} className="space-y-6">
-                  <div>
-                    <h2 className="text-2xl font-black text-slate-900 dark:text-white">Govt. Portal</h2>
-                    <p className="text-sm font-semibold text-slate-500 dark:text-slate-400 mt-1">Sign in with your NIC credentials</p>
-                  </div>
-
-                  <div className="space-y-5">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">NIC ID</label>
-                      <div className="relative">
-                        <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                        <input 
-                          type="text" 
-                          required
-                          value={nicId}
-                          onChange={(e) => setNicId(e.target.value)}
-                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl pl-12 pr-4 py-3.5 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium transition-all placeholder:text-slate-400"
-                          placeholder="Enter NIC ID"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between items-center mb-2">
-                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Security PIN</label>
-                        <a href="#" className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">Forgot PIN?</a>
-                      </div>
-                      <div className="relative">
-                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                        <input 
-                          type={showPin ? "text" : "password"}
-                          required
-                          value={pin}
-                          onChange={(e) => setPin(e.target.value)}
-                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl pl-12 pr-12 py-3.5 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-medium transition-all placeholder:text-slate-400"
-                          placeholder="••••••"
-                        />
-                        <button 
-                          type="button"
-                          onClick={() => setShowPin(!showPin)}
-                          className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                        >
-                          <Eye size={20} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <button 
-                    type="submit"
-                    disabled={isLoading}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl py-4 font-bold text-lg shadow-lg shadow-emerald-600/30 transition-all flex justify-center items-center gap-2 group disabled:opacity-70 disabled:cursor-not-allowed mt-2"
-                  >
-                    {isLoading ? "Verifying..." : (
-                      <>Verify & Login <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" /></>
-                    )}
-                  </button>
-                </form>
+                <GovernmentAuthorityLoginForm
+                  isLoading={isLoading}
+                  error={error}
+                  onInputChange={() => setError(null)}
+                  onSubmit={authenticate}
+                />
               )}
               
             </div>
